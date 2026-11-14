@@ -1,8 +1,8 @@
 import os
+import re
 import json
 import logging
-from datetime import datetime
-from calendar import monthrange
+from datetime import datetime, date
 import requests
 
 logger = logging.getLogger(__name__)
@@ -10,16 +10,75 @@ logger = logging.getLogger(__name__)
 MONMON_URL = os.environ.get("MONMON_URL", "http://127.0.0.1:9000")
 
 
+def fetch_historic_spent_cycles(user_id=None, token=None):
+    """
+    Fetches the exact multi-account spending cycles from MonMon's /historicSpent,
+    matching MonMon's HistoricSpentCalculator across ALL debit and ledger accounts
+    (NatWest, Lloyds, Monzo, Moneybox, etc.).
+    """
+    uids_to_try = []
+    if user_id:
+        uids_to_try.append(user_id)
+    if "2ccc203f-a98c-488f-a5ba-8d20a384a9fc" not in uids_to_try:
+        uids_to_try.append("2ccc203f-a98c-488f-a5ba-8d20a384a9fc")
+
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    else:
+        headers["Authorization"] = "Bearer internal"
+
+    for uid in uids_to_try:
+        url = f"{MONMON_URL.rstrip('/')}/historicSpent?userId={uid}"
+        try:
+            resp = requests.get(url, headers=headers, timeout=5)
+            if resp.status_code == 200:
+                parts = resp.text.split("<details")[1:]
+                cycles = []
+                for p in parts:
+                    range_match = re.search(
+                        r"<b>\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})\s*–\s*(\d{1,2}\s+[A-Za-z]+\s+\d{4})\s*</b>",
+                        p,
+                    )
+                    spent_match = re.search(
+                        r"Total spent in month.*?>£([0-9.,]+)</span>", p
+                    )
+                    if range_match and spent_match:
+                        start_str = range_match.group(1).strip()
+                        end_str = range_match.group(2).strip()
+                        spent_val = float(spent_match.group(1).replace(",", ""))
+                        try:
+                            d1 = datetime.strptime(start_str, "%d %b %Y").date()
+                            d2 = datetime.strptime(end_str, "%d %b %Y").date()
+                            mid_date = d1 + (d2 - d1) / 2
+                            cycles.append({
+                                "start_date": d1.isoformat(),
+                                "end_date": d2.isoformat(),
+                                "mid_date": mid_date.isoformat(),
+                                "date_range": f"{start_str} – {end_str}",
+                                "month_key": mid_date.strftime("%Y-%m"),
+                                "total_spend": spent_val,
+                            })
+                        except Exception:
+                            continue
+                if cycles:
+                    cycles.sort(key=lambda c: c["mid_date"])
+                    return cycles
+        except Exception as e:
+            logger.warning(f"Error fetching /historicSpent ({url}): {e}")
+
+    return []
+
+
 def fetch_monmon_transactions(user_id=None, token=None):
     """
-    Fetch transactions from MonMon's REST API using RAuthy Bearer token or user ID.
+    Fallback: fetch individual transactions from MonMon's REST API.
     """
     uid = user_id or "inbrewj"
     headers = {}
     if token:
         headers["Authorization"] = f"Bearer {token}"
 
-    # Try /api/dig/data first (returns up to 2000 categorized transactions with dates)
     dig_url = f"{MONMON_URL.rstrip('/')}/api/dig/data?user_id={uid}"
     try:
         resp = requests.get(dig_url, headers=headers, timeout=4)
@@ -31,7 +90,6 @@ def fetch_monmon_transactions(user_id=None, token=None):
     except Exception as e:
         logger.warning(f"Error fetching from MonMon dig API ({dig_url}): {e}")
 
-    # Fallback to /bank/transactions
     bank_url = f"{MONMON_URL.rstrip('/')}/bank/transactions?user_id={uid}"
     try:
         resp = requests.get(bank_url, headers=headers, timeout=4)
@@ -99,8 +157,9 @@ def calculate_age_from_month(birthday_dt, year, month):
 
 def compute_spending_correlation(birthday_str, slides, user_id=None, token=None):
     """
-    Aggregates MonMon spending into monthly windows, computes 6-month rolling baseline,
-    detects surges, and correlates with Thread mood and chaotic zones.
+    Aggregates MonMon spending into monthly/cycle windows matching /historicSpent
+    across ALL user accounts, computes 6-month rolling baseline, detects surges,
+    and correlates with Thread mood and chaotic zones.
     """
     try:
         birthday_dt = datetime.strptime(birthday_str, "%Y-%m-%d")
@@ -125,6 +184,107 @@ def compute_spending_correlation(birthday_str, slides, user_id=None, token=None)
         "label": earliest_label,
     }
 
+    # Map slides by age for quick interpolation
+    slide_points = []
+    for s in slides:
+        try:
+            slide_points.append({"age": float(s["age"]), "mood": float(s["mood"])})
+        except (ValueError, KeyError):
+            continue
+    slide_points.sort(key=lambda p: p["age"])
+
+    def get_interpolated_mood(target_age):
+        if not slide_points:
+            return 5.0
+        if target_age <= slide_points[0]["age"]:
+            return slide_points[0]["mood"]
+        if target_age >= slide_points[-1]["age"]:
+            return slide_points[-1]["mood"]
+
+        for i in range(len(slide_points) - 1):
+            p1 = slide_points[i]
+            p2 = slide_points[i + 1]
+            if p1["age"] <= target_age <= p2["age"]:
+                span = p2["age"] - p1["age"]
+                if span <= 0:
+                    return p1["mood"]
+                factor = (target_age - p1["age"]) / span
+                return round(p1["mood"] + factor * (p2["mood"] - p1["mood"]), 1)
+        return 5.0
+
+    # 1. Primary Source: Exact multi-account pay cycles from MonMon's /historicSpent
+    historic_cycles = fetch_historic_spent_cycles(user_id=user_id, token=token)
+
+    if historic_cycles:
+        month_results = []
+        surges_count = 0
+        chaotic_overlaps = 0
+
+        for idx, c in enumerate(historic_cycles):
+            mid_d = datetime.strptime(c["mid_date"], "%Y-%m-%d")
+            age = round((mid_d - birthday_dt).days / 365.2425, 2)
+            total = round(c["total_spend"], 2)
+
+            # Trailing 6-cycle baseline (filtering out one-off capital asset outlays > £40k)
+            preceding = [
+                historic_cycles[k]["total_spend"]
+                for k in range(max(0, idx - 6), idx)
+                if historic_cycles[k]["total_spend"] < 40000.0
+            ]
+            if preceding:
+                baseline = round(sum(preceding) / len(preceding), 2)
+            else:
+                baseline = total
+
+            ratio = round(total / baseline, 2) if baseline > 0 else 1.0
+
+            # Surge criteria: spending is at least 30% higher than baseline and significant volume (>= £1,500)
+            is_surge = bool(ratio >= 1.30 and total >= 1500.0)
+            if is_surge:
+                surges_count += 1
+
+            mood = get_interpolated_mood(age)
+            is_elevated_mood = mood >= 7.0
+            is_low_mood = mood <= 2.5
+            correlates_chaotic = bool(is_surge and (is_elevated_mood or is_low_mood))
+            if correlates_chaotic:
+                chaotic_overlaps += 1
+
+            month_results.append({
+                "month": c["month_key"],
+                "date_range": c["date_range"],
+                "age": age,
+                "total_spend": total,
+                "tx_count": 0,
+                "baseline_6mo": baseline,
+                "surge_ratio": ratio,
+                "is_surge": is_surge,
+                "mood": mood,
+                "is_elevated_mood": is_elevated_mood,
+                "correlates_chaotic": correlates_chaotic,
+                "top_category": "multi_account_cycle",
+            })
+
+        max_surge = max((m["surge_ratio"] for m in month_results), default=1.0)
+        return {
+            "available": True,
+            "source": "MonMon /historicSpent (All Accounts)",
+            "birthday": birthday_str,
+            "earliest_monmon": earliest_info,
+            "months": month_results,
+            "summary": {
+                "total_months": len(month_results),
+                "surges_count": surges_count,
+                "chaotic_overlap_count": chaotic_overlaps,
+                "max_surge_ratio": max_surge,
+                "insight": (
+                    f"{surges_count} multi-account spending surge(s) identified over {len(month_results)} pay cycles; "
+                    f"{chaotic_overlaps} coincided with elevated or turbulent mood phases."
+                ),
+            },
+        }
+
+    # 2. Fallback Source: /api/dig/data transactions
     raw_txs = fetch_monmon_transactions(user_id=user_id, token=token)
 
     # If MonMon is offline or has no data, return graceful mock/fallback structure

@@ -105,8 +105,24 @@
 
       <!-- Mini timeline preview curve -->
       <div style="margin-top: 1.5rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
-          <div class="canvas-title" style="margin-bottom: 0;">Mood Thread Curve Preview</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <div class="canvas-title" style="margin-bottom: 0;">Mood Thread Curve Preview</div>
+            <div class="graph-legend" style="display: flex; align-items: center; gap: 0.65rem; font-size: 0.72rem; color: var(--text-muted);">
+              <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
+                <span style="width: 8px; height: 8px; border-radius: 2px; background: rgba(244, 63, 94, 0.25); border: 1px dashed rgba(244, 63, 94, 0.8);"></span>
+                Chaotic Zone
+              </span>
+              <span id="legend-spend-swatch" style="display: none; align-items: center; gap: 0.25rem;">
+                <span style="width: 8px; height: 8px; border-radius: 2px; background: rgba(245, 158, 11, 0.25); border: 1px dashed rgba(245, 158, 11, 0.8);"></span>
+                Spend Surge
+              </span>
+              <span id="legend-start-swatch" style="display: none; align-items: center; gap: 0.25rem;">
+                <span style="width: 2px; height: 10px; background: #f59e0b; border-left: 1px dashed #f59e0b;"></span>
+                MonMon Starts (Mar 2021)
+              </span>
+            </div>
+          </div>
           <button id="toggle-spend-btn" class="btn btn-secondary btn-sm" onclick="toggleSpendingOverlay()" type="button" style="display: none; padding: 0.2rem 0.5rem; font-size: 0.75rem;">
             💳 MonMon Spend
           </button>
@@ -325,6 +341,17 @@
     let spendingCorrelation = null;
     let showSpendingOverlay = true;
 
+    function updateLegendVisibility() {
+      const spendSwatch = document.getElementById("legend-spend-swatch");
+      const startSwatch = document.getElementById("legend-start-swatch");
+      if (spendSwatch) {
+        spendSwatch.style.display = (showSpendingOverlay && spendingCorrelation && spendingCorrelation.months && spendingCorrelation.months.some(m => m.is_surge)) ? "inline-flex" : "none";
+      }
+      if (startSwatch) {
+        startSwatch.style.display = (showSpendingOverlay && spendingCorrelation && spendingCorrelation.earliest_monmon) ? "inline-flex" : "none";
+      }
+    }
+
     function fetchSpendingCorrelation() {
       fetch(`/api/timeline/${timelineId}/spending-correlation`)
         .then((res) => res.json())
@@ -334,6 +361,7 @@
             console.log("[MonMon] Spending correlation loaded:", data.summary);
             const btn = document.getElementById("toggle-spend-btn");
             if (btn) btn.style.display = "inline-flex";
+            updateLegendVisibility();
             updateSlideView(currentSlide);
           }
         })
@@ -346,6 +374,7 @@
       if (btn) {
         btn.style.opacity = showSpendingOverlay ? "1" : "0.5";
       }
+      updateLegendVisibility();
       const canvas = document.getElementById("leader-graph");
       renderTimelineCanvas(canvas, slides, currentSlide, {
         isFull: true,

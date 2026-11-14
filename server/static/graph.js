@@ -277,13 +277,7 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // 3. Header badge
-        const maxSurgePct = Math.round((Math.max(...surgeMonths.map(m => m.surge_ratio)) - 1) * 100);
-        ctx.fillStyle = "#fbbf24";
-        ctx.font = "600 9px system-ui, -apple-system, sans-serif";
-        ctx.fillText(`💳 Spend Surge (+${maxSurgePct}%)`, bx + 6, Math.max(by + 11, padY + 10));
-
-        // 4. Highlight slide dots that fall inside the spending surge window
+        // 3. Highlight slide dots that fall inside the spending surge window
         windowPoints.forEach(p => {
           ctx.strokeStyle = "#f59e0b";
           ctx.lineWidth = 2;
@@ -299,7 +293,7 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
     }
   }
 
-  // Draw "MonMon Starts" vertical milestone marker
+  // Draw "MonMon Starts" vertical milestone marker line
   if (opt.showSpendingOverlay !== false && opt.spendingData && opt.spendingData.earliest_monmon && opt.spendingData.earliest_monmon.age) {
     try {
       const em = opt.spendingData.earliest_monmon;
@@ -316,7 +310,7 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
         ctx.lineWidth = 1.5;
         ctx.setLineDash([4, 4]);
         ctx.beginPath();
-        ctx.moveTo(mx, padY + 18);
+        ctx.moveTo(mx, padY);
         ctx.lineTo(mx, displayHeight - padY);
         ctx.stroke();
         ctx.setLineDash([]);
@@ -324,28 +318,12 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
         // 2. Small gold pin marker at baseline
         ctx.fillStyle = "#f59e0b";
         ctx.beginPath();
-        ctx.arc(mx, displayHeight - padY, 4, 0, Math.PI * 2);
+        ctx.arc(mx, displayHeight - padY, 4.5, 0, Math.PI * 2);
         ctx.fill();
         ctx.lineWidth = 1.5;
         ctx.strokeStyle = "#ffffff";
         ctx.stroke();
 
-        // 3. Milestone pill label at top
-        ctx.font = "bold 9px system-ui, -apple-system, sans-serif";
-        const labelText = `📊 ${em.label || "MonMon Starts"}`;
-        const tw = ctx.measureText(labelText).width;
-        const lx = Math.max(padX, Math.min(displayWidth - padX - tw - 12, mx - tw / 2 - 6));
-        const ly = padY + 2;
-
-        ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
-        ctx.strokeStyle = "rgba(245, 158, 11, 0.85)";
-        ctx.lineWidth = 1;
-        drawSubtleRoundedBox(ctx, lx, ly, tw + 12, 16, 4);
-        ctx.fill();
-        ctx.stroke();
-
-        ctx.fillStyle = "#fbbf24";
-        ctx.fillText(labelText, lx + 6, ly + 11);
         ctx.restore();
       }
     } catch (err) {
@@ -377,11 +355,6 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
         ctx.setLineDash([4, 4]);
         ctx.stroke();
         ctx.setLineDash([]);
-
-        // Subtle header label
-        ctx.fillStyle = "rgba(244, 63, 94, 0.65)";
-        ctx.font = "600 9px system-ui, -apple-system, sans-serif";
-        ctx.fillText("⚡ Chaotic Zone", bx + 6, Math.max(by + 11, padY + 8));
         ctx.restore();
       }
     });
