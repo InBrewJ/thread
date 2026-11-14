@@ -299,6 +299,60 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
     }
   }
 
+  // Draw "MonMon Starts" vertical milestone marker
+  if (opt.showSpendingOverlay !== false && opt.spendingData && opt.spendingData.earliest_monmon && opt.spendingData.earliest_monmon.age) {
+    try {
+      const em = opt.spendingData.earliest_monmon;
+      const timelineMinAge = Math.min(...slides.map(s => parseFloat(s.age)));
+      const timelineMaxAge = Math.max(...slides.map(s => parseFloat(s.age)));
+      const timelineSpan = Math.max(0.1, timelineMaxAge - timelineMinAge);
+
+      if (em.age >= timelineMinAge && em.age <= timelineMaxAge) {
+        const mx = padX + ((em.age - timelineMinAge) / timelineSpan) * plotWidth;
+
+        ctx.save();
+        // 1. Vertical guideline in subtle gold/amber
+        ctx.strokeStyle = "rgba(245, 158, 11, 0.75)";
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(mx, padY + 18);
+        ctx.lineTo(mx, displayHeight - padY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // 2. Small gold pin marker at baseline
+        ctx.fillStyle = "#f59e0b";
+        ctx.beginPath();
+        ctx.arc(mx, displayHeight - padY, 4, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.lineWidth = 1.5;
+        ctx.strokeStyle = "#ffffff";
+        ctx.stroke();
+
+        // 3. Milestone pill label at top
+        ctx.font = "bold 9px system-ui, -apple-system, sans-serif";
+        const labelText = `📊 ${em.label || "MonMon Starts"}`;
+        const tw = ctx.measureText(labelText).width;
+        const lx = Math.max(padX, Math.min(displayWidth - padX - tw - 12, mx - tw / 2 - 6));
+        const ly = padY + 2;
+
+        ctx.fillStyle = "rgba(15, 23, 42, 0.92)";
+        ctx.strokeStyle = "rgba(245, 158, 11, 0.85)";
+        ctx.lineWidth = 1;
+        drawSubtleRoundedBox(ctx, lx, ly, tw + 12, 16, 4);
+        ctx.fill();
+        ctx.stroke();
+
+        ctx.fillStyle = "#fbbf24";
+        ctx.fillText(labelText, lx + 6, ly + 11);
+        ctx.restore();
+      }
+    } catch (err) {
+      console.warn("[Thread] Error rendering MonMon starts milestone:", err);
+    }
+  }
+
   // Draw subtle boxes around chaotic zones on full curve previews
   if (isFull && opt.showChaoticZones !== false) {
     const chaoticZones = calculateChaoticZones(allPoints);

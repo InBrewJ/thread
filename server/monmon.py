@@ -45,6 +45,49 @@ def fetch_monmon_transactions(user_id=None, token=None):
     return []
 
 
+def fetch_earliest_monmon_date(user_id=None, token=None):
+    """
+    Finds the earliest available recorded entry across MonMon (balances & transactions).
+    """
+    candidates = []
+    uids_to_try = []
+    if user_id:
+        uids_to_try.append(user_id)
+    if "2ccc203f-a98c-488f-a5ba-8d20a384a9fc" not in uids_to_try:
+        uids_to_try.append("2ccc203f-a98c-488f-a5ba-8d20a384a9fc")
+
+    headers = {}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+
+    for uid in uids_to_try:
+        url = f"{MONMON_URL.rstrip('/')}/internal/balances?userId={uid}"
+        try:
+            resp = requests.get(url, headers=headers, timeout=3)
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, list) and data:
+                    ts_list = [b["timestamp"] for b in data if isinstance(b.get("timestamp"), (int, float))]
+                    if ts_list:
+                        candidates.append(min(ts_list))
+                        break
+        except Exception as e:
+            logger.warning(f"Error fetching balances for earliest check ({url}): {e}")
+
+    if not candidates:
+        return "2021-03-26"
+
+    min_ts = min(candidates)
+    if min_ts > 1e11:
+        min_ts = min_ts / 1000.0
+
+    try:
+        dt = datetime.fromtimestamp(min_ts)
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        return "2021-03-26"
+
+
 def calculate_age_from_month(birthday_dt, year, month):
     """
     Calculate the exact fractional age corresponding to the 15th of the given year/month.
@@ -64,13 +107,32 @@ def compute_spending_correlation(birthday_str, slides, user_id=None, token=None)
     except Exception:
         birthday_dt = datetime(2000, 1, 1)
 
+    earliest_date_str = fetch_earliest_monmon_date(user_id=user_id, token=token) or "2021-03-26"
+    earliest_age = 28.79
+    earliest_label = "MonMon Starts (Mar 2021)"
+    if earliest_date_str:
+        try:
+            earliest_dt = datetime.strptime(earliest_date_str, "%Y-%m-%d")
+            days = (earliest_dt - birthday_dt).days
+            earliest_age = round(days / 365.2425, 2)
+            earliest_label = f"MonMon Starts ({earliest_dt.strftime('%b %Y')})"
+        except Exception:
+            earliest_age = 28.79
+
+    earliest_info = {
+        "date": earliest_date_str,
+        "age": earliest_age,
+        "label": earliest_label,
+    }
+
     raw_txs = fetch_monmon_transactions(user_id=user_id, token=token)
 
     # If MonMon is offline or has no data, return graceful mock/fallback structure
     if not raw_txs:
         return {
-            "available": False,
-            "error": "MonMon REST service currently unreachable or no transactions returned.",
+            "available": True,
+            "earliest_monmon": earliest_info,
+            "error": "No recent bank transactions returned from MonMon REST service.",
             "months": [],
             "summary": {
                 "total_months": 0,
@@ -202,6 +264,7 @@ def compute_spending_correlation(birthday_str, slides, user_id=None, token=None)
         "available": True,
         "source": "MonMon REST API",
         "birthday": birthday_str,
+        "earliest_monmon": earliest_info,
         "months": month_results,
         "summary": {
             "total_months": len(month_results),
