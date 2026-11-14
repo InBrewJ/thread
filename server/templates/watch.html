@@ -72,6 +72,9 @@
           </div>
 
           <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div id="monmon-spend-pill" class="spend-pill" style="display: none;" title="MonMon 6-month spending window correlation">
+              💳 <span id="monmon-spend-text"></span>
+            </div>
             <div id="mood-badge" class="mood-badge" style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7;">
               Mood: <span id="mood">5</span>
             </div>
@@ -167,17 +170,60 @@
       document.getElementById("notes").textContent = slide.notes || "No notes recorded.";
       document.getElementById("slide-progress").textContent = `${index + 1} / ${slides.length}`;
 
+      // Check for MonMon spending data in this slide's age window
+      const spendPill = document.getElementById("monmon-spend-pill");
+      const spendText = document.getElementById("monmon-spend-text");
+      if (spendPill && spendText) {
+        let matchingMonth = null;
+        if (spendingCorrelation && spendingCorrelation.months) {
+          matchingMonth = spendingCorrelation.months.find((m) => Math.abs(m.age - slide.age) <= 0.25);
+        }
+        if (matchingMonth) {
+          spendPill.style.display = "inline-flex";
+          const ratioPct = Math.round((matchingMonth.surge_ratio - 1) * 100);
+          if (matchingMonth.is_surge) {
+            spendPill.className = "spend-pill surge";
+            spendText.textContent = `Spend: £${Math.round(matchingMonth.total_spend).toLocaleString()} (+${ratioPct}% surge)`;
+          } else {
+            spendPill.className = "spend-pill";
+            spendText.textContent = `Spend: £${Math.round(matchingMonth.total_spend).toLocaleString()}/mo`;
+          }
+        } else {
+          spendPill.style.display = "none";
+        }
+      }
+
       // Redraw current slide graph (up to active index)
       const canvasCurrent = document.getElementById("graph-current-slide");
       renderTimelineCanvas(canvasCurrent, slides, index, { isFull: false, tension: 0.25, strokeColor: "#38bdf8" });
 
-      // Redraw full timeline graph (showing all with active dot highlighted)
+      // Redraw full timeline graph (showing all with active dot highlighted and MonMon spend layer)
       const canvasAll = document.getElementById("graph-all");
-      renderTimelineCanvas(canvasAll, slides, index, { isFull: true, tension: 0.25, strokeColor: "#818cf8" });
+      renderTimelineCanvas(canvasAll, slides, index, {
+        isFull: true,
+        tension: 0.25,
+        strokeColor: "#818cf8",
+        spendingData: spendingCorrelation
+      });
+    }
+
+    let spendingCorrelation = null;
+
+    function fetchSpendingCorrelation() {
+      fetch(`/api/timeline/${timelineId}/spending-correlation`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.available && data.months && data.months.length > 0) {
+            spendingCorrelation = data;
+            updateSlideView(currentSlide);
+          }
+        })
+        .catch((err) => console.log("MonMon spending correlation not loaded:", err));
     }
 
     window.addEventListener("load", () => {
       updateSlideView(currentSlide);
+      fetchSpendingCorrelation();
     });
 
     window.addEventListener("resize", () => {

@@ -16,5 +16,6 @@ services:
       - OIDC_CLIENT_SECRET=cb2d9d9b89e03f3c701582f2ed75493dbc1406e3432d6814aa1b090f67330fe7
       - APP_URL=https://thread.dryark.uk
       - SECRET_KEY=timeline-production-session-key-2026
+      - MONMON_URL=http://127.0.0.1:9000
     volumes:
       - ./data:/app/data

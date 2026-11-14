@@ -105,7 +105,12 @@
 
       <!-- Mini timeline preview curve -->
       <div style="margin-top: 1.5rem;">
-        <div class="canvas-title">Mood Thread Curve Preview</div>
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+          <div class="canvas-title" style="margin-bottom: 0;">Mood Thread Curve Preview</div>
+          <button id="toggle-spend-btn" class="btn btn-secondary btn-sm" onclick="toggleSpendingOverlay()" type="button" style="display: none; padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+            💳 MonMon Spend
+          </button>
+        </div>
         <div class="canvas-wrapper">
           <canvas id="leader-graph" style="height: 140px;"></canvas>
         </div>
@@ -127,6 +132,9 @@
           </div>
 
           <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div id="monmon-spend-pill" class="spend-pill" style="display: none;" title="MonMon 6-month spending window correlation">
+              💳 <span id="monmon-spend-text"></span>
+            </div>
             <div id="mood-badge" class="mood-badge" style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7;">
               Mood: <span id="mood">5</span>
             </div>
@@ -283,9 +291,70 @@
       document.getElementById("slide-counter").textContent = `Slide ${index + 1} of ${slides.length}`;
       slideSelect.value = index;
 
+      // Check for MonMon spending data in this slide's age window
+      const spendPill = document.getElementById("monmon-spend-pill");
+      const spendText = document.getElementById("monmon-spend-text");
+      if (spendPill && spendText) {
+        let matchingMonth = null;
+        if (spendingCorrelation && spendingCorrelation.months) {
+          matchingMonth = spendingCorrelation.months.find((m) => Math.abs(m.age - slide.age) <= 0.25);
+        }
+        if (matchingMonth) {
+          spendPill.style.display = "inline-flex";
+          const ratioPct = Math.round((matchingMonth.surge_ratio - 1) * 100);
+          if (matchingMonth.is_surge) {
+            spendPill.className = "spend-pill surge";
+            spendText.textContent = `Spend: £${Math.round(matchingMonth.total_spend).toLocaleString()} (+${ratioPct}% surge)`;
+          } else {
+            spendPill.className = "spend-pill";
+            spendText.textContent = `Spend: £${Math.round(matchingMonth.total_spend).toLocaleString()}/mo`;
+          }
+        } else {
+          spendPill.style.display = "none";
+        }
+      }
+
       // Update graph canvas
       const canvas = document.getElementById("leader-graph");
-      renderTimelineCanvas(canvas, slides, index, { isFull: true, tension: 0.25 });
+      renderTimelineCanvas(canvas, slides, index, {
+        isFull: true,
+        tension: 0.25,
+        spendingData: spendingCorrelation,
+        showSpendingOverlay: showSpendingOverlay
+      });
+    }
+
+    let spendingCorrelation = null;
+    let showSpendingOverlay = true;
+
+    function fetchSpendingCorrelation() {
+      fetch(`/api/timeline/${timelineId}/spending-correlation`)
+        .then((res) => res.json())
+        .then((data) => {
+          if (data && data.available && data.months && data.months.length > 0) {
+            spendingCorrelation = data;
+            console.log("[MonMon] Spending correlation loaded:", data.summary);
+            const btn = document.getElementById("toggle-spend-btn");
+            if (btn) btn.style.display = "inline-flex";
+            updateSlideView(currentSlide);
+          }
+        })
+        .catch((err) => console.log("MonMon spending correlation not loaded:", err));
+    }
+
+    function toggleSpendingOverlay() {
+      showSpendingOverlay = !showSpendingOverlay;
+      const btn = document.getElementById("toggle-spend-btn");
+      if (btn) {
+        btn.style.opacity = showSpendingOverlay ? "1" : "0.5";
+      }
+      const canvas = document.getElementById("leader-graph");
+      renderTimelineCanvas(canvas, slides, currentSlide, {
+        isFull: true,
+        tension: 0.25,
+        spendingData: spendingCorrelation,
+        showSpendingOverlay: showSpendingOverlay
+      });
     }
 
     function copyFollowerLink() {
@@ -334,11 +403,17 @@
 
     window.addEventListener("load", () => {
       updateSlideView(currentSlide);
+      fetchSpendingCorrelation();
     });
 
     window.addEventListener("resize", () => {
       const canvas = document.getElementById("leader-graph");
-      renderTimelineCanvas(canvas, slides, currentSlide, { isFull: true, tension: 0.25 });
+      renderTimelineCanvas(canvas, slides, currentSlide, {
+        isFull: true,
+        tension: 0.25,
+        spendingData: spendingCorrelation,
+        showSpendingOverlay: showSpendingOverlay
+      });
     });
   </script>
 

@@ -22,6 +22,7 @@ from flask_socketio import SocketIO, emit, join_room, leave_room
 import requests
 
 import db
+import monmon
 
 load_dotenv()
 
@@ -232,6 +233,8 @@ def callback():
     session["email"] = email
     if "id_token" in token_data:
         session["id_token"] = token_data["id_token"]
+    if "access_token" in token_data:
+        session["access_token"] = token_data["access_token"]
 
     # Check if user has at least one timeline; if not, create an initial one
     user_timelines = db.get_timelines_by_user(user_id)
@@ -584,6 +587,33 @@ def api_import_slides(timeline_id):
     db.replace_slides(timeline_id, slides_list)
     socketio.emit("timeline_data_updated", {"timeline_id": timeline_id}, room=f"room_{timeline_id}")
     return jsonify({"success": True, "count": len(slides_list)})
+
+
+@app.route("/api/timeline/<timeline_id>/spending-correlation", methods=["GET"])
+def get_spending_correlation(timeline_id):
+    timeline = db.get_timeline(timeline_id)
+    if not timeline:
+        timeline = db.get_timeline_by_share_token(timeline_id)
+    if not timeline:
+        return jsonify({"error": "Timeline not found"}), 404
+
+    slides = db.get_slides(timeline["id"])
+    birthday = timeline.get("birthday", "2000-01-01")
+
+    # Determine user identity for MonMon query
+    user = get_current_user()
+    user_id = None
+    if user:
+        user_id = user.get("username") or user.get("email") or user.get("id")
+    if not user_id:
+        user_id = session.get("username") or session.get("email") or "inbrewj"
+
+    token = session.get("id_token") or session.get("access_token")
+
+    correlation = monmon.compute_spending_correlation(
+        birthday, slides, user_id=user_id, token=token
+    )
+    return jsonify(correlation)
 
 
 @app.route("/health")

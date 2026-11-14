@@ -26,7 +26,13 @@ Live Instance: **[thread.dryark.uk](https://thread.dryark.uk)**
     - **Overview Thread**: Complete lifetime journey overview.
   - Zero-latency slide transitions powered by WebSockets (Socket.IO).
 
-### 3. Authentication & Data Privacy
+### 3. MonMon Financial & Mood Volatility Correlation
+- **Rest API Integration**: Seamlessly communicates with MonMon (`http://127.0.0.1:9000`) over internal loopback using shared RAuthy OIDC Bearer tokens.
+- **6-Month Rolling Spend Baseline**: Calculates month-over-month expenditure windows and flags spending surges ($\ge +30\%$ over trailing 6-month average).
+- **Mood & Impulse Correlator**: Automatically aligns calendar transaction dates with timeline life stages via birthdate, projecting financial surges directly onto the mood curve to identify manic/chaotic spending patterns.
+- **Dynamic Spend Canvas Overlay**: Ambient amber spending envelope, vertical surge guides, and live spend badges on both Leader and Follower slide decks.
+
+### 4. Authentication & Data Privacy
 - **RAuthy OIDC & Passkeys**: Secure SSO supporting Passkeys (WebAuthn) and OAuth2/OIDC.
 - **Strict Data Isolation**: Multi-tenant architecture where each user's timelines and mood points are strictly partitioned by `user_id` in SQLite.
 - **Privacy-First Design**: Databases and private user records are excluded from source control (`.gitignore`). New instances start with clean demo placeholder data.
