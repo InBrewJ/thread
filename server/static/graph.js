@@ -228,115 +228,74 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
     return;
   }
 
-  // Draw MonMon Spending Layer (if available and enabled)
+  // Draw MonMon Spending Surge Overlay (if available and enabled)
   if (opt.showSpendingOverlay !== false && opt.spendingData && opt.spendingData.available && opt.spendingData.months && opt.spendingData.months.length > 0) {
     try {
-      const months = opt.spendingData.months;
-      const minAge = Math.min(...slides.map((s) => parseFloat(s.age)));
-      const maxAge = Math.max(...slides.map((s) => parseFloat(s.age)));
-      const ageSpan = Math.max(0.1, maxAge - minAge);
+      const surgeMonths = opt.spendingData.months.filter(m => m.is_surge);
+      if (surgeMonths.length > 0) {
+        const timelineMinAge = Math.min(...slides.map(s => parseFloat(s.age)));
+        const timelineMaxAge = Math.max(...slides.map(s => parseFloat(s.age)));
+        const timelineSpan = Math.max(0.1, timelineMaxAge - timelineMinAge);
 
-      const validSpendMonths = months.filter(m => m.age >= minAge - 0.5 && m.age <= maxAge + 0.5);
-      if (validSpendMonths.length > 0) {
-        const maxSpend = Math.max(...validSpendMonths.map(m => m.total_spend), 100);
-        const baseY = displayHeight - padY;
-        const maxAreaHeight = chartHeight * 0.35; // occupies bottom 35% of chart max
+        const surgeAges = surgeMonths.map(m => m.age);
+        const minSurgeAge = Math.min(...surgeAges);
+        const maxSurgeAge = Math.max(...surgeAges);
 
-        ctx.save();
+        // Window slightly expanded to cover surrounding transition
+        const windowMinAge = Math.max(timelineMinAge, minSurgeAge - 0.2);
+        const windowMaxAge = Math.min(timelineMaxAge, maxSurgeAge + 0.2);
 
-        // 1. Draw smooth envelope of monthly spending along baseline
-        ctx.beginPath();
-        let started = false;
-        let firstX = padX;
-        let lastX = padX;
+        const bx1 = padX + ((windowMinAge - timelineMinAge) / timelineSpan) * plotWidth;
+        const bx2 = padX + ((windowMaxAge - timelineMinAge) / timelineSpan) * plotWidth;
 
-        validSpendMonths.forEach((m) => {
-          const mx = padX + ((m.age - minAge) / ageSpan) * plotWidth;
-          const boundedX = Math.max(padX, Math.min(displayWidth - padX, mx));
-          const barH = (m.total_spend / maxSpend) * maxAreaHeight;
-          const my = baseY - barH;
+        const bx = Math.max(padX - 4, Math.min(bx1, bx2) - 8);
+        const bw = Math.max(48, Math.abs(bx2 - bx1) + 16);
 
-          if (!started) {
-            ctx.moveTo(boundedX, baseY);
-            firstX = boundedX;
-            started = true;
-          }
-          ctx.lineTo(boundedX, my);
-          lastX = boundedX;
-        });
-
-        if (started) {
-          ctx.lineTo(lastX, baseY);
-          ctx.closePath();
-          ctx.fillStyle = "rgba(245, 158, 11, 0.12)";
-          ctx.fill();
-
-          // Stroke top border of spending envelope
-          ctx.beginPath();
-          validSpendMonths.forEach((m, idx) => {
-            const mx = padX + ((m.age - minAge) / ageSpan) * plotWidth;
-            const boundedX = Math.max(padX, Math.min(displayWidth - padX, mx));
-            const barH = (m.total_spend / maxSpend) * maxAreaHeight;
-            const my = baseY - barH;
-            if (idx === 0) ctx.moveTo(boundedX, my);
-            else ctx.lineTo(boundedX, my);
-          });
-          ctx.strokeStyle = "rgba(245, 158, 11, 0.55)";
-          ctx.lineWidth = 1.5;
-          ctx.stroke();
+        // Find Y range of points in this age window to bound the box neatly around the curve
+        const windowPoints = allPoints.filter(p => p.age >= windowMinAge - 0.35 && p.age <= windowMaxAge + 0.35);
+        let by, bh;
+        if (windowPoints.length > 0) {
+          const ys = windowPoints.map(p => p.y);
+          by = Math.max(padY, Math.min(...ys) - 16);
+          const maxY = Math.min(displayHeight - padY, Math.max(...ys) + 16);
+          bh = Math.max(40, maxY - by);
+        } else {
+          by = padY + 10;
+          bh = chartHeight - 20;
         }
 
-        // 2. Draw Surge Beacons & Chaotic Overlap Markers
-        validSpendMonths.forEach((m) => {
-          const mx = padX + ((m.age - minAge) / ageSpan) * plotWidth;
-          if (mx < padX || mx > displayWidth - padX) return;
-          const barH = (m.total_spend / maxSpend) * maxAreaHeight;
-          const my = baseY - barH;
+        ctx.save();
+        // 1. Subtle warm amber/gold tinted box
+        drawSubtleRoundedBox(ctx, bx, by, bw, bh, 6);
+        ctx.fillStyle = "rgba(245, 158, 11, 0.09)";
+        ctx.fill();
 
-          if (m.is_surge) {
-            // Subtle vertical dashed guide
-            ctx.strokeStyle = m.correlates_chaotic ? "rgba(239, 68, 68, 0.6)" : "rgba(245, 158, 11, 0.4)";
-            ctx.lineWidth = 1;
-            ctx.setLineDash([3, 3]);
-            ctx.beginPath();
-            ctx.moveTo(mx, baseY);
-            ctx.lineTo(mx, Math.min(my, baseY - 20));
-            ctx.stroke();
-            ctx.setLineDash([]);
+        // 2. Subtle dashed amber border
+        ctx.strokeStyle = "rgba(245, 158, 11, 0.55)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-            // Amber surge dot on envelope
-            ctx.fillStyle = m.correlates_chaotic ? "#ef4444" : "#f59e0b";
-            ctx.beginPath();
-            ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
-            ctx.fill();
+        // 3. Header badge
+        const maxSurgePct = Math.round((Math.max(...surgeMonths.map(m => m.surge_ratio)) - 1) * 100);
+        ctx.fillStyle = "#fbbf24";
+        ctx.font = "600 9px system-ui, -apple-system, sans-serif";
+        ctx.fillText(`💳 Spend Surge (+${maxSurgePct}%)`, bx + 6, Math.max(by + 11, padY + 10));
 
-            // If full view and coincides with chaotic/elevated, draw a subtle badge
-            if (isFull && m.correlates_chaotic) {
-              ctx.save();
-              ctx.font = "bold 9px system-ui, -apple-system, sans-serif";
-              const labelText = `💳 Spend Surge (+${Math.round((m.surge_ratio - 1) * 100)}%)`;
-              const tw = ctx.measureText(labelText).width;
-              const lx = Math.max(padX, Math.min(displayWidth - padX - tw - 8, mx - tw / 2));
-              const ly = Math.max(padY + 14, my - 10);
-
-              ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
-              ctx.strokeStyle = "rgba(245, 158, 11, 0.75)";
-              ctx.lineWidth = 1;
-              drawSubtleRoundedBox(ctx, lx - 4, ly - 9, tw + 8, 14, 4);
-              ctx.fill();
-              ctx.stroke();
-
-              ctx.fillStyle = "#fbbf24";
-              ctx.fillText(labelText, lx, ly + 2);
-              ctx.restore();
-            }
-          }
+        // 4. Highlight slide dots that fall inside the spending surge window
+        windowPoints.forEach(p => {
+          ctx.strokeStyle = "#f59e0b";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.arc(p.x, p.y, 8, 0, Math.PI * 2);
+          ctx.stroke();
         });
 
         ctx.restore();
       }
     } catch (err) {
-      console.warn("[Thread] Error rendering MonMon spending layer:", err);
+      console.warn("[Thread] Error rendering MonMon spend surge zone:", err);
     }
   }
 
