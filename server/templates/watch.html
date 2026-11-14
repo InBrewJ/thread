@@ -174,20 +174,18 @@
       const spendPill = document.getElementById("monmon-spend-pill");
       const spendText = document.getElementById("monmon-spend-text");
       if (spendPill && spendText) {
-        let matchingMonth = null;
+        let matchingSurge = null;
         if (spendingCorrelation && spendingCorrelation.months) {
-          matchingMonth = spendingCorrelation.months.find((m) => Math.abs(m.age - slide.age) <= 0.25);
+          // Look for any spending surge within this slide's age window
+          matchingSurge = spendingCorrelation.months.find(
+            (m) => m.is_surge && Math.abs(m.age - slide.age) <= 0.3
+          );
         }
-        if (matchingMonth) {
+        if (matchingSurge) {
           spendPill.style.display = "inline-flex";
-          const ratioPct = Math.round((matchingMonth.surge_ratio - 1) * 100);
-          if (matchingMonth.is_surge) {
-            spendPill.className = "spend-pill surge";
-            spendText.textContent = `Spend: £${Math.round(matchingMonth.total_spend).toLocaleString()} (+${ratioPct}% surge)`;
-          } else {
-            spendPill.className = "spend-pill";
-            spendText.textContent = `Spend: £${Math.round(matchingMonth.total_spend).toLocaleString()}/mo`;
-          }
+          spendPill.className = "spend-pill surge";
+          const ratioPct = Math.round((matchingSurge.surge_ratio - 1) * 100);
+          spendText.textContent = `Spend Surge (+${ratioPct}%): £${Math.round(matchingSurge.total_spend).toLocaleString()} (${matchingSurge.month})`;
         } else {
           spendPill.style.display = "none";
         }
