@@ -1,0 +1,20 @@
+services:
+  timeline:
+    container_name: timeline
+    image: timeline:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: always
+    network_mode: host
+    environment:
+      - PORT=3001
+      - DATABASE_PATH=/app/data/timeline.db
+      - RAUTHY_URL=https://identity.dryark.uk
+      - RAUTHY_INTERNAL_URL=http://127.0.0.1:8085
+      - OIDC_CLIENT_ID=thread-web
+      - OIDC_CLIENT_SECRET=cb2d9d9b89e03f3c701582f2ed75493dbc1406e3432d6814aa1b090f67330fe7
+      - APP_URL=https://thread.dryark.uk
+      - SECRET_KEY=timeline-production-session-key-2026
+    volumes:
+      - ./data:/app/data

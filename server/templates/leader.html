@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thread Leader | {{ timeline.title }}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/thread-logo.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Thread">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <script src="/static/cardinal-splines.js"></script>
+  <script src="/static/graph.js"></script>
+  <script src="/static/qrcode.min.js"></script>
+</head>
+<body style="background: var(--bg-primary);">
+  <nav class="navbar">
+    <div class="navbar-brand-group">
+      <a href="/dashboard" class="brand">
+        <img src="/static/thread-logo.svg" alt="Thread Logo" width="28" height="28" style="display: block;">
+        <span>Thread</span>
+      </a>
+      <span class="user-badge" style="background: #065f46; color: #a7f3d0; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em;">LEADER</span>
+      <span class="navbar-title" title="{{ timeline.title }}">{{ timeline.title }}</span>
+    </div>
+    <div class="navbar-right-group">
+      <span class="follower-pill-mobile" id="follower-badge-mobile" title="Audience connected">
+        👥 <strong id="follower-count-mobile">0</strong>
+      </span>
+      <button class="navbar-burger" id="navBurger" aria-label="Toggle navigation menu" aria-expanded="false" type="button">
+        <span class="burger-bar"></span>
+        <span class="burger-bar"></span>
+        <span class="burger-bar"></span>
+      </button>
+    </div>
+    <div class="nav-links" id="navLinks">
+      <span class="user-badge" id="follower-badge">
+        Followers: <strong id="follower-count">0</strong>
+      </span>
+      <a href="/timeline/{{ timeline.id }}/edit" class="btn btn-secondary btn-sm">Edit Moods</a>
+      <a href="/dashboard" class="btn btn-secondary btn-sm">Dashboard</a>
+    </div>
+  </nav>
+
+  <div class="split-layout">
+    <!-- Left Pane: Controls & Follower Link -->
+    <div id="left-pane" class="pane">
+      <div class="pane-header">
+        <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem;">Presentation Controls</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">
+          Advancing slides here automatically updates all connected followers in real time.
+        </p>
+      </div>
+
+      <!-- Share Box -->
+      <div style="margin-bottom: 1.5rem;">
+        <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
+          <span>Share with your audience:</span>
+          <span style="color: var(--accent); font-size: 0.8rem;">Isolated Room URL</span>
+        </label>
+        <div class="share-box">
+          <input type="text" readonly class="share-input" id="followerUrl" value="{{ follower_url }}">
+          <button class="btn btn-primary btn-sm" onclick="copyFollowerLink()">Copy Link</button>
+          <button class="btn btn-secondary btn-sm" onclick="openQrModal()" id="qrBtn" title="Show QR Code for audience to scan" style="display: inline-flex; align-items: center; gap: 0.35rem;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <rect x="3" y="3" width="7" height="7"></rect>
+              <rect x="14" y="3" width="7" height="7"></rect>
+              <rect x="14" y="14" width="7" height="7"></rect>
+              <rect x="3" y="14" width="7" height="7"></rect>
+            </svg>
+            <span>QR Code</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Main Back & Forward Buttons -->
+      <div class="leader-controls-grid">
+        <div class="controls-row">
+          <button id="control-back" class="control-btn control-back" type="button" aria-label="Go to previous slide">
+            &laquo; Back
+          </button>
+          <button id="control-forward" class="control-btn control-forward" type="button" aria-label="Go to next slide">
+            Forward &raquo;
+          </button>
+        </div>
+
+        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-primary); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 0.5rem;">
+          <span style="font-size: 0.95rem; color: var(--text-muted);">
+            Progress: <strong id="slide-counter" style="color: var(--text-main);">Slide 1 of {{ slides|length }}</strong>
+          </span>
+          <div style="display: flex; align-items: center; gap: 0.5rem;">
+            <label for="slide-select" style="font-size: 0.85rem; color: var(--text-muted);">Jump to:</label>
+            <select id="slide-select" class="form-control" style="width: auto; padding: 0.25rem 0.5rem; font-size: 0.85rem;" onchange="jumpToSlide(this.value)">
+              {% for s in slides %}
+                <option value="{{ loop.index0 }}">Age {{ s.age }} - {{ s.emoji }} (Mood {{ s.mood }})</option>
+              {% endfor %}
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mini timeline preview curve -->
+      <div style="margin-top: 1.5rem;">
+        <div class="canvas-title">Mood Thread Curve Preview</div>
+        <div class="canvas-wrapper">
+          <canvas id="leader-graph" style="height: 140px;"></canvas>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Pane: Slide Details -->
+    <div id="right-pane" class="pane">
+      <div class="pane-header">
+        <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem;">Current Life Stage</h2>
+        <span id="rough-date" style="font-size: 0.9rem; color: var(--accent); font-weight: 600;"></span>
+      </div>
+
+      <div class="slide-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+          <div class="metric-group" style="margin-bottom: 0;">
+            <div class="metric-label">Age</div>
+            <div id="age" class="metric-value-lg">0</div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div id="mood-badge" class="mood-badge" style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7;">
+              Mood: <span id="mood">5</span>
+            </div>
+            <span id="emoji" style="font-size: 2.25rem;"></span>
+          </div>
+        </div>
+
+        <div style="margin-top: 1rem;">
+          <div class="metric-label">Notable Events</div>
+          <ul id="events-list" class="events-list"></ul>
+        </div>
+
+        <div style="margin-top: 1.25rem;">
+          <div class="metric-label">Reflections & Notes</div>
+          <div id="notes" class="notes-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const timelineId = {{ timeline.id|tojson }};
+    const birthday = {{ timeline.birthday|tojson }};
+    const slides = {{ slides|tojson }};
+
+    let currentSlide = 0;
+    const socket = io();
+
+    socket.on("connect", () => {
+      console.log("[Leader] Connected to Socket.IO, joining room:", timelineId);
+      socket.emit("join_room", { timeline_id: timelineId, role: "leader" });
+    });
+
+    socket.on("room_state", (state) => {
+      if (state.current_slide !== undefined && state.current_slide < slides.length) {
+        currentSlide = state.current_slide;
+        updateSlideView(currentSlide);
+      }
+      if (state.follower_count !== undefined) {
+        document.getElementById("follower-count").textContent = state.follower_count;
+      }
+    });
+
+    socket.on("follower_count", (data) => {
+      const el = document.getElementById("follower-count");
+      if (el) el.textContent = data.count;
+      const elMobile = document.getElementById("follower-count-mobile");
+      if (elMobile) elMobile.textContent = data.count;
+    });
+
+    socket.on("update_slide", (data) => {
+      currentSlide = data.slide_index;
+      updateSlideView(currentSlide);
+    });
+
+    const backButton = document.getElementById("control-back");
+    const forwardButton = document.getElementById("control-forward");
+    const slideSelect = document.getElementById("slide-select");
+
+    backButton.addEventListener("click", () => {
+      socket.emit("change_slide_back", { timeline_id: timelineId });
+    });
+
+    forwardButton.addEventListener("click", () => {
+      socket.emit("change_slide_forward", { timeline_id: timelineId });
+    });
+
+    // Prevent double-click zoom or selection on rapid taps
+    [backButton, forwardButton].forEach((btn) => {
+      if (!btn) return;
+      btn.addEventListener("dblclick", (e) => {
+        e.preventDefault();
+      });
+    });
+
+    // Mobile Burger / Pancake Menu
+    const navBurger = document.getElementById("navBurger");
+    const navLinks = document.getElementById("navLinks");
+    if (navBurger && navLinks) {
+      navBurger.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const isOpen = navLinks.classList.toggle("open");
+        navBurger.classList.toggle("open", isOpen);
+        navBurger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+      });
+      document.addEventListener("click", (e) => {
+        if (!navLinks.contains(e.target) && !navBurger.contains(e.target)) {
+          navLinks.classList.remove("open");
+          navBurger.classList.remove("open");
+          navBurger.setAttribute("aria-expanded", "false");
+        }
+      });
+      navLinks.querySelectorAll("a, button").forEach((el) => {
+        el.addEventListener("click", () => {
+          navLinks.classList.remove("open");
+          navBurger.classList.remove("open");
+          navBurger.setAttribute("aria-expanded", "false");
+        });
+      });
+    }
+
+    function jumpToSlide(idx) {
+      socket.emit("set_slide", { timeline_id: timelineId, slide_index: parseInt(idx, 10) });
+    }
+
+    // Keyboard navigation: Left/Right arrows
+    window.addEventListener("keydown", (e) => {
+      if (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA" || e.target.tagName === "SELECT") return;
+      if (e.key === "ArrowLeft") {
+        socket.emit("change_slide_back", { timeline_id: timelineId });
+      } else if (e.key === "ArrowRight" || e.key === " ") {
+        e.preventDefault();
+        socket.emit("change_slide_forward", { timeline_id: timelineId });
+      }
+    });
+
+    function updateSlideView(index) {
+      if (!slides || slides.length === 0) return;
+      if (index < 0) index = 0;
+      if (index >= slides.length) index = slides.length - 1;
+
+      const slide = slides[index];
+
+      document.getElementById("age").textContent = slide.age;
+      document.getElementById("rough-date").textContent = addYearsToDate(birthday, slide.age);
+
+      const moodSpan = document.getElementById("mood");
+      moodSpan.textContent = slide.mood;
+
+      const badge = document.getElementById("mood-badge");
+      const moodColor = getMoodColor(slide.mood);
+      badge.style.background = moodColor + "22";
+      badge.style.color = moodColor;
+      badge.style.border = `1px solid ${moodColor}`;
+
+      document.getElementById("emoji").textContent = slide.emoji || "";
+
+      const eventsList = document.getElementById("events-list");
+      eventsList.innerHTML = "";
+      if (Array.isArray(slide.events) && slide.events.length > 0) {
+        slide.events.forEach((ev) => {
+          const li = document.createElement("li");
+          li.textContent = ev;
+          eventsList.appendChild(li);
+        });
+      } else {
+        const li = document.createElement("li");
+        li.textContent = "No specific milestones listed.";
+        li.style.color = "var(--text-muted)";
+        eventsList.appendChild(li);
+      }
+
+      document.getElementById("notes").textContent = slide.notes || "No notes recorded.";
+      document.getElementById("slide-counter").textContent = `Slide ${index + 1} of ${slides.length}`;
+      slideSelect.value = index;
+
+      // Update graph canvas
+      const canvas = document.getElementById("leader-graph");
+      renderTimelineCanvas(canvas, slides, index, { isFull: true, tension: 0.25 });
+    }
+
+    function copyFollowerLink() {
+      const input = document.getElementById("followerUrl");
+      input.select();
+      input.setSelectionRange(0, 99999);
+      navigator.clipboard.writeText(input.value).then(() => {
+        alert("Follower presentation link copied to clipboard!");
+      });
+    }
+
+    let qrInstance = null;
+
+    function openQrModal() {
+      const url = document.getElementById("followerUrl").value;
+      const container = document.getElementById("qrcode-container");
+      container.innerHTML = "";
+
+      qrInstance = new QRCode(container, {
+        text: url,
+        width: 220,
+        height: 220,
+        colorDark: "#0f172a",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.M
+      });
+
+      document.getElementById("qrModal").classList.add("active");
+    }
+
+    function closeQrModal() {
+      document.getElementById("qrModal").classList.remove("active");
+    }
+
+    function handleQrOverlayClick(e) {
+      if (e.target.id === "qrModal") {
+        closeQrModal();
+      }
+    }
+
+    window.addEventListener("keydown", (e) => {
+      if (e.key === "Escape") {
+        closeQrModal();
+      }
+    });
+
+    window.addEventListener("load", () => {
+      updateSlideView(currentSlide);
+    });
+
+    window.addEventListener("resize", () => {
+      const canvas = document.getElementById("leader-graph");
+      renderTimelineCanvas(canvas, slides, currentSlide, { isFull: true, tension: 0.25 });
+    });
+  </script>
+
+  <!-- Modal: Follower QR Code -->
+  <div class="modal-overlay" id="qrModal" onclick="handleQrOverlayClick(event)">
+    <div class="modal-content" style="max-width: 380px; text-align: center;">
+      <div class="modal-header">
+        <h3 style="margin: 0; font-size: 1.15rem; font-weight: 700;">Audience QR Code</h3>
+        <button class="close-btn" onclick="closeQrModal()">&times;</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin: 0.75rem 0 1.25rem 0;">
+        Audience members can scan this with their phone cameras to follow your mood thread live.
+      </p>
+
+      <!-- High contrast card for reliable scanning -->
+      <div style="background: #ffffff; padding: 1.25rem; border-radius: 12px; display: inline-block; box-shadow: 0 4px 20px rgba(0,0,0,0.3); margin-bottom: 1rem;">
+        <div id="qrcode-container" style="display: flex; justify-content: center; align-items: center; min-width: 220px; min-height: 220px;"></div>
+      </div>
+
+      <div style="background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.8rem; word-break: break-all; color: var(--text-muted); margin-bottom: 1.25rem; font-family: monospace;">
+        {{ follower_url }}
+      </div>
+
+      <div style="display: flex; gap: 0.5rem; justify-content: center;">
+        <button class="btn btn-secondary" onclick="copyFollowerLink()">Copy Link</button>
+        <button class="btn btn-primary" onclick="closeQrModal()">Done</button>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

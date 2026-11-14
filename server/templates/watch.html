@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thread | {{ timeline.title }}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/thread-logo.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Thread">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <script src="/static/cardinal-splines.js"></script>
+  <script src="/static/graph.js"></script>
+</head>
+<body style="background: var(--bg-primary);">
+  <nav class="navbar">
+    <div class="navbar-brand-group">
+      <a href="/" class="brand">
+        <img src="/static/thread-logo.svg" alt="Thread Logo" width="28" height="28" style="display: block;">
+        <span>Thread</span>
+      </a>
+      <span class="user-badge" style="background: #1e3a8a; color: #93c5fd; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em;">WATCH</span>
+      <span class="navbar-title" title="{{ timeline.title }}">{{ timeline.title }}</span>
+    </div>
+    <div class="nav-status">
+      <span class="user-badge" id="status-badge" style="background: #065f46; color: #6ee7b7;">
+        Live Synced
+      </span>
+      <span class="user-badge" id="slide-progress">
+        1 / {{ slides|length }}
+      </span>
+    </div>
+  </nav>
+
+  <div class="split-layout">
+    <!-- Left Pane: Dual Graphs -->
+    <div id="left-pane" class="pane">
+      <div class="pane-header">
+        <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem;">Mood Curve Journey</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted);">
+          Visualizing the life stages and mood fluctuations in sync with the presentation leader.
+        </p>
+      </div>
+
+      <div class="canvas-wrapper">
+        <div class="canvas-title">Life Stage Progress</div>
+        <canvas id="graph-current-slide" style="height: 190px;"></canvas>
+      </div>
+
+      <div class="canvas-wrapper">
+        <div class="canvas-title">Full Mood Thread (Overview)</div>
+        <canvas id="graph-all" style="height: 170px;"></canvas>
+      </div>
+    </div>
+
+    <!-- Right Pane: Slide Details -->
+    <div id="right-pane" class="pane">
+      <div class="pane-header">
+        <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem;">Life Stage Details</h2>
+        <span id="rough-date" style="font-size: 0.9rem; color: var(--accent); font-weight: 600;"></span>
+      </div>
+
+      <div class="slide-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
+          <div class="metric-group" style="margin-bottom: 0;">
+            <div class="metric-label">Age</div>
+            <div id="age" class="metric-value-lg">0</div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.75rem;">
+            <div id="mood-badge" class="mood-badge" style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7;">
+              Mood: <span id="mood">5</span>
+            </div>
+            <span id="emoji" style="font-size: 2.25rem;"></span>
+          </div>
+        </div>
+
+        <div style="margin-top: 1rem;">
+          <div class="metric-label">Notable Events</div>
+          <ul id="events-list" class="events-list"></ul>
+        </div>
+
+        <div style="margin-top: 1.25rem;">
+          <div class="metric-label">Reflections & Notes</div>
+          <div id="notes" class="notes-box"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const timelineId = {{ timeline.id|tojson }};
+    const birthday = {{ timeline.birthday|tojson }};
+    const slides = {{ slides|tojson }};
+
+    let currentSlide = 0;
+    const socket = io();
+
+    socket.on("connect", () => {
+      console.log("[Follower] Connected to WebSocket, joining room:", timelineId);
+      document.getElementById("status-badge").textContent = "Connected";
+      document.getElementById("status-badge").style.background = "#065f46";
+      socket.emit("join_room", { timeline_id: timelineId, role: "follower" });
+    });
+
+    socket.on("disconnect", () => {
+      document.getElementById("status-badge").textContent = "Reconnecting...";
+      document.getElementById("status-badge").style.background = "#991b1b";
+    });
+
+    socket.on("room_state", (state) => {
+      if (state.current_slide !== undefined && state.current_slide < slides.length) {
+        currentSlide = state.current_slide;
+        updateSlideView(currentSlide);
+      }
+    });
+
+    socket.on("update_slide", (data) => {
+      currentSlide = data.slide_index;
+      updateSlideView(currentSlide);
+    });
+
+    socket.on("timeline_data_updated", () => {
+      window.location.reload();
+    });
+
+    function updateSlideView(index) {
+      if (!slides || slides.length === 0) return;
+      if (index < 0) index = 0;
+      if (index >= slides.length) index = slides.length - 1;
+
+      const slide = slides[index];
+
+      document.getElementById("age").textContent = slide.age;
+      document.getElementById("rough-date").textContent = addYearsToDate(birthday, slide.age);
+
+      const moodSpan = document.getElementById("mood");
+      moodSpan.textContent = slide.mood;
+
+      const badge = document.getElementById("mood-badge");
+      const moodColor = getMoodColor(slide.mood);
+      badge.style.background = moodColor + "22";
+      badge.style.color = moodColor;
+      badge.style.border = `1px solid ${moodColor}`;
+
+      document.getElementById("emoji").textContent = slide.emoji || "";
+
+      const eventsList = document.getElementById("events-list");
+      eventsList.innerHTML = "";
+      if (Array.isArray(slide.events) && slide.events.length > 0) {
+        slide.events.forEach((ev) => {
+          const li = document.createElement("li");
+          li.textContent = ev;
+          eventsList.appendChild(li);
+        });
+      } else {
+        const li = document.createElement("li");
+        li.textContent = "No specific milestones listed.";
+        li.style.color = "var(--text-muted)";
+        eventsList.appendChild(li);
+      }
+
+      document.getElementById("notes").textContent = slide.notes || "No notes recorded.";
+      document.getElementById("slide-progress").textContent = `${index + 1} / ${slides.length}`;
+
+      // Redraw current slide graph (up to active index)
+      const canvasCurrent = document.getElementById("graph-current-slide");
+      renderTimelineCanvas(canvasCurrent, slides, index, { isFull: false, tension: 0.25, strokeColor: "#38bdf8" });
+
+      // Redraw full timeline graph (showing all with active dot highlighted)
+      const canvasAll = document.getElementById("graph-all");
+      renderTimelineCanvas(canvasAll, slides, index, { isFull: true, tension: 0.25, strokeColor: "#818cf8" });
+    }
+
+    window.addEventListener("load", () => {
+      updateSlideView(currentSlide);
+    });
+
+    window.addEventListener("resize", () => {
+      updateSlideView(currentSlide);
+    });
+  </script>
+</body>
+</html>

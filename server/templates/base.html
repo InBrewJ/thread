@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Thread | Mood & Mental Health Tracker{% endblock %}</title>
+  <link rel="icon" type="image/svg+xml" href="/static/thread-logo.svg">
+  <link rel="apple-touch-icon" sizes="180x180" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Thread">
+  <meta name="theme-color" content="#0f172a">
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+  <script src="/static/cardinal-splines.js"></script>
+  <script src="/static/graph.js"></script>
+  {% block extra_head %}{% endblock %}
+</head>
+<body>
+  <nav class="navbar">
+    <div class="navbar-brand-group">
+      <a href="/" class="brand">
+        <img src="/static/thread-logo.svg" alt="Thread Logo" width="28" height="28" style="display: block;">
+        <span>Thread</span>
+      </a>
+    </div>
+    <div class="navbar-right-group">
+      <button class="navbar-burger" id="navBurger" aria-label="Toggle navigation menu" aria-expanded="false" type="button">
+        <span class="burger-bar"></span>
+        <span class="burger-bar"></span>
+        <span class="burger-bar"></span>
+      </button>
+    </div>
+    <div class="nav-links" id="navLinks">
+      {% if session.get('user_id') %}
+        <a href="/dashboard" class="btn btn-secondary btn-sm">Dashboard</a>
+        <span class="user-badge">{{ session.get('username') or session.get('user_id') }}</span>
+        <a href="/logout" class="btn btn-secondary btn-sm">Log Out</a>
+      {% else %}
+        <a href="/login" class="btn btn-primary btn-sm">Log In with RAuthy</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <div style="max-width: 1200px; margin: 1rem auto; padding: 0 1.5rem;">
+        {% for category, message in messages %}
+          <div class="flash-message flash-{{ category }}">{{ message }}</div>
+        {% endfor %}
+      </div>
+    {% endif %}
+  {% endwith %}
+
+  {% block content %}{% endblock %}
+
+  {% block extra_scripts %}{% endblock %}
+
+  <script>
+    (function() {
+      const burger = document.getElementById("navBurger");
+      const navLinks = document.getElementById("navLinks");
+      if (burger && navLinks) {
+        burger.addEventListener("click", function(e) {
+          e.stopPropagation();
+          const isOpen = navLinks.classList.toggle("open");
+          burger.classList.toggle("open", isOpen);
+          burger.setAttribute("aria-expanded", isOpen ? "true" : "false");
+        });
+        document.addEventListener("click", function(e) {
+          if (!navLinks.contains(e.target) && !burger.contains(e.target)) {
+            navLinks.classList.remove("open");
+            burger.classList.remove("open");
+            burger.setAttribute("aria-expanded", "false");
+          }
+        });
+        navLinks.querySelectorAll("a, button").forEach(function(el) {
+          el.addEventListener("click", function() {
+            navLinks.classList.remove("open");
+            burger.classList.remove("open");
+            burger.setAttribute("aria-expanded", "false");
+          });
+        });
+      }
+    })();
+  </script>
+</body>
+</html>

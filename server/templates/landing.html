@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+
+{% block title %}Thread | Mental Health & Mood Tracker{% endblock %}
+
+{% block content %}
+<div class="container" style="max-width: 960px; padding-top: 3rem; text-align: center;">
+  <div style="display: inline-flex; align-items: center; justify-content: center; width: 76px; height: 76px; background: rgba(56, 189, 248, 0.1); border-radius: 22px; border: 1px solid rgba(56, 189, 248, 0.25); margin-bottom: 1.5rem; box-shadow: 0 4px 20px rgba(56, 189, 248, 0.15);">
+    <img src="/static/thread-logo.svg" alt="Thread Logo" width="48" height="48">
+  </div>
+
+  <h1 style="font-size: 2.75rem; font-weight: 800; margin-bottom: 1rem; color: #ffffff; letter-spacing: -0.02em;">
+    Follow Your Mood Thread.<br>
+    <span style="color: var(--accent);">Present Live to Others.</span>
+  </h1>
+  
+  <p style="font-size: 1.15rem; color: var(--text-muted); margin-bottom: 2rem; max-width: 640px; margin-left: auto; margin-right: auto; line-height: 1.6;">
+    A private mental health and mood tracking platform designed for bipolar and mood disorders. Map life milestones on a 0–10 scale, detect turbulent phases, and synchronize live presentations with your audience in real time.
+  </p>
+
+  <div style="display: flex; gap: 1rem; justify-content: center; margin-bottom: 3.5rem;">
+    <a href="/login" class="btn btn-primary btn-lg" style="padding: 0.85rem 1.75rem; font-size: 1.05rem; display: inline-flex; align-items: center; gap: 0.6rem;">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4"/><polyline points="10 17 15 12 10 7"/><line x1="15" y1="12" x2="3" y2="12"/></svg>
+      Sign In via RAuthy SSO
+    </a>
+  </div>
+
+  <!-- Feature Grid -->
+  <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 1.25rem; margin-bottom: 3.5rem; text-align: left;">
+    <div class="slide-card" style="margin-bottom: 0;">
+      <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">🔒</div>
+      <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; color: #ffffff;">Private & Secure</h3>
+      <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin: 0;">
+        Your personal mood history, medical reflections, and milestone events are completely private to your authenticated identity.
+      </p>
+    </div>
+
+    <div class="slide-card" style="margin-bottom: 0;">
+      <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">📈</div>
+      <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; color: #ffffff;">Relative Chaotic Zones</h3>
+      <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin: 0;">
+        Smooth cardinal splines with automatic relative volatility calculation highlight episodes of turbulence across your life journey.
+      </p>
+    </div>
+
+    <div class="slide-card" style="margin-bottom: 0;">
+      <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">🎙️</div>
+      <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; color: #ffffff;">Live Synchronized Presenting</h3>
+      <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin: 0;">
+        Take the lead and present your story live. Followers in your presentation room sync to your current slide with WebSockets.
+      </p>
+    </div>
+
+    <div class="slide-card" style="margin-bottom: 0;">
+      <div style="font-size: 1.75rem; margin-bottom: 0.5rem;">📱</div>
+      <h3 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 0.4rem; color: #ffffff;">Unguessable Links & QR Codes</h3>
+      <p style="font-size: 0.88rem; color: var(--text-muted); line-height: 1.5; margin: 0;">
+        Share isolated presentation rooms via secure, unguessable follower tokens or generate an instant QR code on your presenter screen.
+      </p>
+    </div>
+  </div>
+
+  <!-- Illustrative Sample Mood Curve (Fully Synthetic) -->
+  <div style="background: var(--bg-secondary); border: 1px solid var(--border-color); border-radius: 12px; padding: 1.5rem; text-align: left; margin-bottom: 2rem;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; gap: 0.5rem;">
+      <div>
+        <h2 style="font-size: 1.15rem; font-weight: 700; margin: 0;">Interactive Mood Curve Engine</h2>
+        <span style="font-size: 0.8rem; color: var(--text-muted);">Sample visualization (0–10 mood scale with adaptive curve interpolation)</span>
+      </div>
+      <span class="user-badge" style="background: rgba(56, 189, 248, 0.15); color: var(--accent);">Example Curve</span>
+    </div>
+    <div class="canvas-wrapper" style="margin-bottom: 0;">
+      <canvas id="preview-canvas" style="height: 200px;"></canvas>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // Synthetic sample points for visual illustration on the public landing page (zero personal data)
+  const sampleSlides = [
+    { age: 16, mood: 4, emoji: "🙂" },
+    { age: 18, mood: 5, emoji: "😊" },
+    { age: 20, mood: 2, emoji: "🌧️" },
+    { age: 21, mood: 3, emoji: "🌱" },
+    { age: 22.0, mood: 9, emoji: "⚡" },
+    { age: 22.4, mood: 1, emoji: "🌩️" },
+    { age: 22.8, mood: 8, emoji: "🔥" },
+    { age: 23.2, mood: 4, emoji: "🌤️" },
+    { age: 25, mood: 5, emoji: "🌿" },
+    { age: 27, mood: 6, emoji: "✨" },
+    { age: 29, mood: 4, emoji: "🍂" },
+    { age: 31.0, mood: 8, emoji: "⚡" },
+    { age: 31.5, mood: 2, emoji: "🌧️" },
+    { age: 32.0, mood: 6, emoji: "🌱" }
+  ];
+
+  const canvas = document.getElementById('preview-canvas');
+  if (canvas) {
+    window.addEventListener('load', () => {
+      renderTimelineCanvas(canvas, sampleSlides, sampleSlides.length - 1, { tension: 0.25 });
+    });
+    window.addEventListener('resize', () => {
+      renderTimelineCanvas(canvas, sampleSlides, sampleSlides.length - 1, { tension: 0.25 });
+    });
+  }
+</script>
+{% endblock %}

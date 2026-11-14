@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" width="48" height="48" fill="none">
+  <!-- Needle body -->
+  <path d="M41 7 L43 9 C43.8 9.8 43.8 11.2 43 12 L19 36 L12 38 L14 31 L38 7 C38.8 6.2 40.2 6.2 41 7 Z" fill="#cbd5e1" stroke="#f8fafc" stroke-width="1.2" stroke-linejoin="round"/>
+  <!-- Needle eyelet slot -->
+  <ellipse cx="38" cy="12" rx="1.2" ry="3.5" transform="rotate(-45 38 12)" fill="#0f172a" stroke="#64748b" stroke-width="0.8"/>
+  <!-- Thread through the eyelet and flowing into a smooth mood wave -->
+  <path d="M46 3 C42 0 35 6 38 12 C40 16 32 21 26 19 C18 16 12 26 6 24 C2 22 2 30 7 32 C13 34 19 28 25 30 C31 32 37 26 44 28" fill="none" stroke="#38bdf8" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Needle sharp tip highlight -->
+  <circle cx="12" cy="38" r="1" fill="#ffffff"/>
+  <!-- Mood point on thread -->
+  <circle cx="26" cy="19" r="2" fill="#10b981"/>
+</svg>
