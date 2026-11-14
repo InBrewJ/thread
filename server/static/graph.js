@@ -192,6 +192,7 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
   const padY = 20;
   const padX = 25;
   const chartHeight = displayHeight - 2 * padY;
+  const plotWidth = displayWidth - 2 * padX;
 
   // Baseline grid lines
   const baselineMoods = [
@@ -229,109 +230,113 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
 
   // Draw MonMon Spending Layer (if available and enabled)
   if (opt.showSpendingOverlay !== false && opt.spendingData && opt.spendingData.available && opt.spendingData.months && opt.spendingData.months.length > 0) {
-    const months = opt.spendingData.months;
-    const minAge = Math.min(...slides.map((s) => parseFloat(s.age)));
-    const maxAge = Math.max(...slides.map((s) => parseFloat(s.age)));
-    const ageSpan = Math.max(0.1, maxAge - minAge);
+    try {
+      const months = opt.spendingData.months;
+      const minAge = Math.min(...slides.map((s) => parseFloat(s.age)));
+      const maxAge = Math.max(...slides.map((s) => parseFloat(s.age)));
+      const ageSpan = Math.max(0.1, maxAge - minAge);
 
-    const validSpendMonths = months.filter(m => m.age >= minAge - 0.5 && m.age <= maxAge + 0.5);
-    if (validSpendMonths.length > 0) {
-      const maxSpend = Math.max(...validSpendMonths.map(m => m.total_spend), 100);
-      const baseY = displayHeight - padY;
-      const maxAreaHeight = chartHeight * 0.35; // occupies bottom 35% of chart max
+      const validSpendMonths = months.filter(m => m.age >= minAge - 0.5 && m.age <= maxAge + 0.5);
+      if (validSpendMonths.length > 0) {
+        const maxSpend = Math.max(...validSpendMonths.map(m => m.total_spend), 100);
+        const baseY = displayHeight - padY;
+        const maxAreaHeight = chartHeight * 0.35; // occupies bottom 35% of chart max
 
-      ctx.save();
+        ctx.save();
 
-      // 1. Draw smooth envelope of monthly spending along baseline
-      ctx.beginPath();
-      let started = false;
-      let firstX = padX;
-      let lastX = padX;
-
-      validSpendMonths.forEach((m) => {
-        const mx = padX + ((m.age - minAge) / ageSpan) * plotWidth;
-        const boundedX = Math.max(padX, Math.min(displayWidth - padX, mx));
-        const barH = (m.total_spend / maxSpend) * maxAreaHeight;
-        const my = baseY - barH;
-
-        if (!started) {
-          ctx.moveTo(boundedX, baseY);
-          firstX = boundedX;
-          started = true;
-        }
-        ctx.lineTo(boundedX, my);
-        lastX = boundedX;
-      });
-
-      if (started) {
-        ctx.lineTo(lastX, baseY);
-        ctx.closePath();
-        ctx.fillStyle = "rgba(245, 158, 11, 0.12)";
-        ctx.fill();
-
-        // Stroke top border of spending envelope
+        // 1. Draw smooth envelope of monthly spending along baseline
         ctx.beginPath();
-        validSpendMonths.forEach((m, idx) => {
+        let started = false;
+        let firstX = padX;
+        let lastX = padX;
+
+        validSpendMonths.forEach((m) => {
           const mx = padX + ((m.age - minAge) / ageSpan) * plotWidth;
           const boundedX = Math.max(padX, Math.min(displayWidth - padX, mx));
           const barH = (m.total_spend / maxSpend) * maxAreaHeight;
           const my = baseY - barH;
-          if (idx === 0) ctx.moveTo(boundedX, my);
-          else ctx.lineTo(boundedX, my);
+
+          if (!started) {
+            ctx.moveTo(boundedX, baseY);
+            firstX = boundedX;
+            started = true;
+          }
+          ctx.lineTo(boundedX, my);
+          lastX = boundedX;
         });
-        ctx.strokeStyle = "rgba(245, 158, 11, 0.55)";
-        ctx.lineWidth = 1.5;
-        ctx.stroke();
-      }
 
-      // 2. Draw Surge Beacons & Chaotic Overlap Markers
-      validSpendMonths.forEach((m) => {
-        const mx = padX + ((m.age - minAge) / ageSpan) * plotWidth;
-        if (mx < padX || mx > displayWidth - padX) return;
-        const barH = (m.total_spend / maxSpend) * maxAreaHeight;
-        const my = baseY - barH;
-
-        if (m.is_surge) {
-          // Subtle vertical dashed guide
-          ctx.strokeStyle = m.correlates_chaotic ? "rgba(239, 68, 68, 0.6)" : "rgba(245, 158, 11, 0.4)";
-          ctx.lineWidth = 1;
-          ctx.setLineDash([3, 3]);
-          ctx.beginPath();
-          ctx.moveTo(mx, baseY);
-          ctx.lineTo(mx, Math.min(my, baseY - 20));
-          ctx.stroke();
-          ctx.setLineDash([]);
-
-          // Amber surge dot on envelope
-          ctx.fillStyle = m.correlates_chaotic ? "#ef4444" : "#f59e0b";
-          ctx.beginPath();
-          ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
+        if (started) {
+          ctx.lineTo(lastX, baseY);
+          ctx.closePath();
+          ctx.fillStyle = "rgba(245, 158, 11, 0.12)";
           ctx.fill();
 
-          // If full view and coincides with chaotic/elevated, draw a subtle badge
-          if (isFull && m.correlates_chaotic) {
-            ctx.save();
-            ctx.font = "bold 9px system-ui, -apple-system, sans-serif";
-            const labelText = `💳 Spend Surge (+${Math.round((m.surge_ratio - 1) * 100)}%)`;
-            const tw = ctx.measureText(labelText).width;
-            const lx = Math.max(padX, Math.min(displayWidth - padX - tw - 8, mx - tw / 2));
-            const ly = Math.max(padY + 14, my - 10);
-
-            ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
-            ctx.strokeStyle = "rgba(245, 158, 11, 0.75)";
-            ctx.lineWidth = 1;
-            drawSubtleRoundedBox(ctx, lx - 4, ly - 9, tw + 8, 14, 4);
-            ctx.fill();
-            ctx.stroke();
-
-            ctx.fillStyle = "#fbbf24";
-            ctx.fillText(labelText, lx, ly + 2);
-            ctx.restore();
-          }
+          // Stroke top border of spending envelope
+          ctx.beginPath();
+          validSpendMonths.forEach((m, idx) => {
+            const mx = padX + ((m.age - minAge) / ageSpan) * plotWidth;
+            const boundedX = Math.max(padX, Math.min(displayWidth - padX, mx));
+            const barH = (m.total_spend / maxSpend) * maxAreaHeight;
+            const my = baseY - barH;
+            if (idx === 0) ctx.moveTo(boundedX, my);
+            else ctx.lineTo(boundedX, my);
+          });
+          ctx.strokeStyle = "rgba(245, 158, 11, 0.55)";
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
         }
-      });
 
-      ctx.restore();
+        // 2. Draw Surge Beacons & Chaotic Overlap Markers
+        validSpendMonths.forEach((m) => {
+          const mx = padX + ((m.age - minAge) / ageSpan) * plotWidth;
+          if (mx < padX || mx > displayWidth - padX) return;
+          const barH = (m.total_spend / maxSpend) * maxAreaHeight;
+          const my = baseY - barH;
+
+          if (m.is_surge) {
+            // Subtle vertical dashed guide
+            ctx.strokeStyle = m.correlates_chaotic ? "rgba(239, 68, 68, 0.6)" : "rgba(245, 158, 11, 0.4)";
+            ctx.lineWidth = 1;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(mx, baseY);
+            ctx.lineTo(mx, Math.min(my, baseY - 20));
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Amber surge dot on envelope
+            ctx.fillStyle = m.correlates_chaotic ? "#ef4444" : "#f59e0b";
+            ctx.beginPath();
+            ctx.arc(mx, my, 3.5, 0, Math.PI * 2);
+            ctx.fill();
+
+            // If full view and coincides with chaotic/elevated, draw a subtle badge
+            if (isFull && m.correlates_chaotic) {
+              ctx.save();
+              ctx.font = "bold 9px system-ui, -apple-system, sans-serif";
+              const labelText = `💳 Spend Surge (+${Math.round((m.surge_ratio - 1) * 100)}%)`;
+              const tw = ctx.measureText(labelText).width;
+              const lx = Math.max(padX, Math.min(displayWidth - padX - tw - 8, mx - tw / 2));
+              const ly = Math.max(padY + 14, my - 10);
+
+              ctx.fillStyle = "rgba(15, 23, 42, 0.88)";
+              ctx.strokeStyle = "rgba(245, 158, 11, 0.75)";
+              ctx.lineWidth = 1;
+              drawSubtleRoundedBox(ctx, lx - 4, ly - 9, tw + 8, 14, 4);
+              ctx.fill();
+              ctx.stroke();
+
+              ctx.fillStyle = "#fbbf24";
+              ctx.fillText(labelText, lx, ly + 2);
+              ctx.restore();
+            }
+          }
+        });
+
+        ctx.restore();
+      }
+    } catch (err) {
+      console.warn("[Thread] Error rendering MonMon spending layer:", err);
     }
   }
 
