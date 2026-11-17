@@ -263,6 +263,7 @@ class TestImageAPI(unittest.TestCase):
         self.assertIn("mood-artwork-frame", watch_html)
         self.assertIn("update_image_mode", watch_html)
         self.assertIn("shareToken", watch_html)
+        self.assertIn("still drawing...", watch_html)
 
         self._login_as(self.owner_id)
         res_lead = self.client.get(f"/lead/{self.timeline_id}")
@@ -274,3 +275,4 @@ class TestImageAPI(unittest.TestCase):
         self.assertIn("Generative Art", lead_html)
         self.assertIn("set_image_mode", lead_html)
         self.assertIn("update_image_mode", lead_html)
+        self.assertIn("still drawing...", lead_html)

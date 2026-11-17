@@ -171,6 +171,7 @@
           <div class="mood-artwork-frame" id="mood-artwork-frame">
             <img id="slide-artwork-img" alt="Mood scene artwork" style="display: none;">
             <canvas id="slide-artwork-canvas" width="400" height="400" style="display: none;"></canvas>
+            <div id="slide-artwork-placeholder" class="mood-artwork-placeholder" style="display: none;">still drawing...</div>
           </div>
         </div>
 
@@ -264,6 +265,7 @@
     function renderSlideArtwork(index) {
       const img = document.getElementById("slide-artwork-img");
       const canvas = document.getElementById("slide-artwork-canvas");
+      const placeholder = document.getElementById("slide-artwork-placeholder");
       if (!img || !canvas || !slides || slides.length === 0) return;
 
       const clampedIndex = Math.max(0, Math.min(index, slides.length - 1));
@@ -271,35 +273,50 @@
       const prevSlide = clampedIndex > 0 ? slides[clampedIndex - 1] : null;
       const seq = ++artworkRenderSeq;
 
-      function showCanvasFallback() {
+      function showCanvas() {
         img.style.display = "none";
+        if (placeholder) placeholder.style.display = "none";
         canvas.style.display = "block";
         if (typeof window.renderMoodArt === "function") {
           window.renderMoodArt(canvas, slide, prevSlide);
         }
       }
 
-      if (imageMode === "full" && slide && slide.image_ready && slide.id) {
-        const imageUrl = `/api/slides/${slide.id}/image?v=${encodeURIComponent(slide.image_hash || "")}`;
-        if (img.getAttribute("data-src") === imageUrl && img.complete && img.naturalWidth > 0) {
-          canvas.style.display = "none";
-          img.style.display = "block";
-          return;
+      function showDrawingPlaceholder() {
+        img.style.display = "none";
+        canvas.style.display = "none";
+        if (placeholder) {
+          placeholder.style.display = "flex";
         }
-        showCanvasFallback();
-        img.onload = () => {
-          if (seq !== artworkRenderSeq) return;
-          canvas.style.display = "none";
-          img.style.display = "block";
-        };
-        img.onerror = () => {
-          if (seq !== artworkRenderSeq) return;
-          showCanvasFallback();
-        };
-        img.setAttribute("data-src", imageUrl);
-        img.src = imageUrl;
+      }
+
+      if (imageMode === "full") {
+        if (slide && slide.image_ready && slide.id) {
+          const imageUrl = `/api/slides/${slide.id}/image?v=${encodeURIComponent(slide.image_hash || "")}`;
+          if (img.getAttribute("data-src") === imageUrl && img.complete && img.naturalWidth > 0) {
+            canvas.style.display = "none";
+            if (placeholder) placeholder.style.display = "none";
+            img.style.display = "block";
+            return;
+          }
+          showDrawingPlaceholder();
+          img.onload = () => {
+            if (seq !== artworkRenderSeq) return;
+            canvas.style.display = "none";
+            if (placeholder) placeholder.style.display = "none";
+            img.style.display = "block";
+          };
+          img.onerror = () => {
+            if (seq !== artworkRenderSeq) return;
+            showDrawingPlaceholder();
+          };
+          img.setAttribute("data-src", imageUrl);
+          img.src = imageUrl;
+        } else {
+          showDrawingPlaceholder();
+        }
       } else {
-        showCanvasFallback();
+        showCanvas();
       }
     }
 
