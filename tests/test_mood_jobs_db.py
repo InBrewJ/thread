@@ -109,3 +109,40 @@ class TestMoodJobsDB(unittest.TestCase):
         db.delete_slide(job1["slide_id"])
         img_map = db.get_slide_image_map("timeline-default", self.db_path)
         self.assertNotIn(job1["slide_id"], img_map)
+
+    def test_requeue_stale_processing_jobs(self):
+        db.backfill_missing_image_jobs(self.db_path)
+        job1 = db.claim_next_image_job(self.db_path)
+        job2 = db.claim_next_image_job(self.db_path)
+        self.assertEqual(job1["status"], "processing")
+        self.assertEqual(job2["status"], "processing")
+
+        requeued = db.requeue_stale_processing_jobs(self.db_path)
+        self.assertEqual(requeued, 2)
+        self.assertEqual(db.requeue_stale_processing_jobs(self.db_path), 0)
+
+        img_map = db.get_slide_image_map("timeline-default", self.db_path)
+        self.assertEqual(img_map[job1["slide_id"]]["status"], "pending")
+        self.assertEqual(img_map[job2["slide_id"]]["status"], "pending")
+
+    def test_expected_hash_guards_stale_complete_and_fail(self):
+        db.backfill_missing_image_jobs(self.db_path)
+        job = db.claim_next_image_job(self.db_path)
+        sid = job["slide_id"]
+        h1 = job["content_hash"]
+        h2 = "updated-hash-after-edit"
+
+        # Slide edited mid-inference -> re-queued as pending with H2
+        self.assertTrue(db.enqueue_slide_image_job(sid, h2, self.db_path))
+
+        # Stale worker finishing H1 must not overwrite H2
+        self.assertFalse(
+            db.complete_image_job(sid, "old prompt", "mood_images/old.png", self.db_path, expected_hash=h1)
+        )
+        self.assertFalse(
+            db.fail_image_job(sid, "old error", self.db_path, expected_hash=h1)
+        )
+
+        img_map = db.get_slide_image_map("timeline-default", self.db_path)
+        self.assertEqual(img_map[sid]["status"], "pending")
+        self.assertEqual(img_map[sid]["content_hash"], h2)

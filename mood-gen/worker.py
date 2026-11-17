@@ -4,6 +4,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 # Allow importing server/db.py when running from repo root or container (/app/db.py)
@@ -30,6 +31,7 @@ DEFAULT_MODEL_URL = (
 )
 DEFAULT_SD_STEPS = 12
 DEFAULT_SD_CFG_SCALE = "7.0"
+DEFAULT_SD_TIMEOUT_SECONDS = 1800
 
 
 def _default_download(url: str, tmp_path: str) -> None:
@@ -130,6 +132,7 @@ def render_and_resize(
                 str(gen_size),
                 "--steps",
                 str(steps),
+                "--vae-tiling",
                 "-o",
                 raw_path,
             ]
@@ -140,7 +143,8 @@ def render_and_resize(
             if cfg_scale:
                 cmd.extend(["--cfg-scale", cfg_scale])
 
-            res = run_fn(cmd, capture_output=True, text=True, check=False)
+            timeout_s = float(os.environ.get("SD_TIMEOUT_SECONDS", str(DEFAULT_SD_TIMEOUT_SECONDS)))
+            res = run_fn(cmd, capture_output=True, text=True, check=False, timeout=timeout_s)
             if res.returncode != 0:
                 stderr = (getattr(res, "stderr", "") or "").strip()
                 raise RuntimeError(f"sd-cli failed with exit code {res.returncode}: {stderr}")
@@ -176,9 +180,12 @@ def process_one_job(
         return False
 
     slide_id = int(job["slide_id"])
+    claimed_hash = job.get("content_hash")
     gen_size = int(os.environ.get("GEN_SIZE", "256"))
     out_size = int(os.environ.get("OUT_SIZE", "400"))
     steps = int(os.environ.get("SD_STEPS", str(DEFAULT_SD_STEPS)))
+    output_path = os.path.join(images_dir, f"{slide_id}.png")
+    staged_path = os.path.join(images_dir, f".{slide_id}.{os.getpid()}.staging.png")
 
     try:
         prompt = build_mood_prompt(
@@ -187,24 +194,42 @@ def process_one_job(
             job.get("events", []),
             job.get("notes", ""),
         )
-        output_path = os.path.join(images_dir, f"{slide_id}.png")
         logger.info("Processing slide_id=%d (gen=%dx%d -> out=%dx%d, steps=%d)", slide_id, gen_size, gen_size, out_size, out_size, steps)
         render_and_resize(
             sd_cli_bin=sd_cli_bin,
             model_path=model_path,
             prompt=prompt,
-            output_path=output_path,
+            output_path=staged_path,
             gen_size=gen_size,
             out_size=out_size,
             steps=steps,
             runner=runner,
         )
         rel_path = f"mood_images/{slide_id}.png"
-        db.complete_image_job(slide_id, prompt, rel_path, db_path)
-        logger.info("Completed slide_id=%d -> %s", slide_id, output_path)
+        updated = db.complete_image_job(
+            slide_id,
+            prompt,
+            rel_path,
+            db_path,
+            expected_hash=claimed_hash,
+        )
+        if updated:
+            os.replace(staged_path, output_path)
+            logger.info("Completed slide_id=%d -> %s", slide_id, output_path)
+        else:
+            logger.info(
+                "Discarded stale render for slide_id=%d (slide edited mid-inference)",
+                slide_id,
+            )
     except Exception as exc:
         logger.exception("Failed processing slide_id=%d: %s", slide_id, exc)
-        db.fail_image_job(slide_id, str(exc)[:500], db_path)
+        db.fail_image_job(slide_id, str(exc)[:500], db_path, expected_hash=claimed_hash)
+    finally:
+        if os.path.exists(staged_path):
+            try:
+                os.remove(staged_path)
+            except OSError:
+                pass
 
     return True
 
@@ -224,12 +249,11 @@ def main() -> None:
     idle_sleep = float(os.environ.get("IDLE_SLEEP_SECONDS", "10"))
     backfill_interval = float(os.environ.get("BACKFILL_INTERVAL_SECONDS", "300"))
 
-    stop_requested = False
+    stop_event = threading.Event()
 
     def _handle_signal(signum, _frame):
-        nonlocal stop_requested
         logger.info("Received signal %d; shutting down after current step...", signum)
-        stop_requested = True
+        stop_event.set()
 
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
@@ -238,8 +262,12 @@ def main() -> None:
     db.init_db(db_path)
     ensure_model_weights(model_path, model_url)
 
+    requeued = db.requeue_stale_processing_jobs(db_path)
+    if requeued:
+        logger.info("Re-queued %d stale processing job(s) on startup", requeued)
+
     last_backfill = 0.0
-    while not stop_requested:
+    while not stop_event.is_set():
         now = time.monotonic()
         if now - last_backfill >= backfill_interval:
             queued = db.backfill_missing_image_jobs(db_path)
@@ -248,9 +276,9 @@ def main() -> None:
             last_backfill = now
 
         did_work = process_one_job(db_path, images_dir, sd_cli_bin, model_path)
-        if stop_requested:
+        if stop_event.is_set():
             break
-        time.sleep(inter_job_sleep if did_work else idle_sleep)
+        stop_event.wait(inter_job_sleep if did_work else idle_sleep)
 
     logger.info("mood-gen worker exited cleanly.")
 

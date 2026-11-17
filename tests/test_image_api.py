@@ -1,8 +1,14 @@
+import atexit
 import json
 import os
+import shutil
 import sys
 import tempfile
 import unittest
+
+_MODULE_TMPDIR = tempfile.mkdtemp(prefix="thread-test-init-")
+atexit.register(shutil.rmtree, _MODULE_TMPDIR, ignore_errors=True)
+os.environ.setdefault("DATABASE_PATH", os.path.join(_MODULE_TMPDIR, "init.db"))
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "server"))
 import db
@@ -54,6 +60,22 @@ class TestImageAPI(unittest.TestCase):
         # Non-existent slide id must also return 401/403 to unauthenticated callers (no ID enumeration)
         res_missing = self.client.get("/api/slides/999999/image")
         self.assertIn(res_missing.status_code, (401, 403))
+        # Non-ASCII token must return 403 (not HTTP 500 from secrets.compare_digest)
+        res_non_ascii = self.client.get(f"/api/slides/{self.slide_id}/image?token=café")
+        self.assertEqual(res_non_ascii.status_code, 403)
+
+    def test_image_route_rejects_share_token_from_other_timeline(self):
+        db.upsert_user("other-user@example.com", email="other-user@example.com", username="other", display_name="Other")
+        other_tid = db.create_timeline("other-user@example.com", title="Other", birthday="1995-01-01")
+        other_timeline = db.get_timeline(other_tid)
+        img_file = os.path.join(self.images_dir, f"{self.slide_id}.png")
+        with open(img_file, "wb") as f:
+            f.write(b"\x89PNG\r\n\x1a\n")
+
+        res = self.client.get(
+            f"/api/slides/{self.slide_id}/image?token={other_timeline['share_token']}"
+        )
+        self.assertEqual(res.status_code, 403)
 
     def test_image_route_allows_valid_share_token(self):
         res_404 = self.client.get(f"/api/slides/{self.slide_id}/image?token={self.share_token}")

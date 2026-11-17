@@ -20,7 +20,7 @@ GIT_COMMIT=$(git rev-parse --short HEAD 2>/dev/null || echo "local")
 GIT_COUNT=$(git rev-list --count HEAD 2>/dev/null || echo "dev")
 
 echo -e "${BLUE}${BOLD}==> [1/4] Preparing remote directory structure on ${GREENSTREET_HOST} (commit: ${GIT_COMMIT}, count: ${GIT_COUNT})...${NC}"
-ssh "$GREENSTREET_HOST" "mkdir -p ${REMOTE_DIR}/data ${REMOTE_DIR}/server"
+ssh "$GREENSTREET_HOST" "mkdir -p ${REMOTE_DIR}/data ${REMOTE_DIR}/server ${REMOTE_DIR}/mood-gen"
 
 echo -e "${BLUE}${BOLD}==> [2/4] Syncing application code, templates, and configs to ${GREENSTREET_HOST}...${NC}"
 # Copy server directory (code, static, templates)
@@ -30,6 +30,14 @@ rsync -avz --delete \
     --exclude '.venv' \
     server/ \
     "${GREENSTREET_HOST}:${REMOTE_DIR}/server/"
+
+# Copy mood-gen worker directory
+rsync -avz --delete \
+    --exclude '__pycache__' \
+    --exclude '*.pyc' \
+    --exclude '.venv' \
+    mood-gen/ \
+    "${GREENSTREET_HOST}:${REMOTE_DIR}/mood-gen/"
 
 # Copy root deployment files
 rsync -avz \

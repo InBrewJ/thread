@@ -495,15 +495,20 @@ def enqueue_slide_image_job(slide_id: int, content_hash: str, db_path: str | Non
     """Enqueue or re-queue a slide image job when missing, failed, or content_hash changed."""
     conn = get_connection(db_path)
     try:
-        with conn:
-            row = conn.execute(
-                "SELECT content_hash, status FROM mood_image_jobs WHERE slide_id = ?",
-                (slide_id,),
-            ).fetchone()
-            if row is not None and row["content_hash"] == content_hash and row["status"] != "failed":
-                return False
-            conn.execute(_UPSERT_PENDING_JOB_SQL, (slide_id, content_hash))
-            return True
+        conn.execute("BEGIN IMMEDIATE;")
+        row = conn.execute(
+            "SELECT content_hash, status FROM mood_image_jobs WHERE slide_id = ?",
+            (slide_id,),
+        ).fetchone()
+        if row is not None and row["content_hash"] == content_hash and row["status"] != "failed":
+            conn.rollback()
+            return False
+        conn.execute(_UPSERT_PENDING_JOB_SQL, (slide_id, content_hash))
+        conn.commit()
+        return True
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 
@@ -513,29 +518,56 @@ def backfill_missing_image_jobs(db_path: str | None = None) -> int:
     conn = get_connection(db_path)
     queued = 0
     try:
-        with conn:
-            rows = conn.execute(
-                """
-                SELECT s.id, s.mood, s.emoji, s.events, s.notes, j.content_hash AS job_hash
-                FROM slides s
-                LEFT JOIN mood_image_jobs j ON j.slide_id = s.id
-                ORDER BY s.id ASC
-                """
-            ).fetchall()
-            for row in rows:
-                content_hash = compute_slide_content_hash(
-                    row["mood"],
-                    row["emoji"],
-                    _parse_events(row["events"]),
-                    row["notes"] or "",
-                )
-                if row["job_hash"] == content_hash:
-                    continue
-                conn.execute(_UPSERT_PENDING_JOB_SQL, (row["id"], content_hash))
-                queued += 1
+        conn.execute("BEGIN IMMEDIATE;")
+        rows = conn.execute(
+            """
+            SELECT s.id, s.mood, s.emoji, s.events, s.notes, j.content_hash AS job_hash
+            FROM slides s
+            LEFT JOIN mood_image_jobs j ON j.slide_id = s.id
+            ORDER BY s.id ASC
+            """
+        ).fetchall()
+        for row in rows:
+            content_hash = compute_slide_content_hash(
+                row["mood"],
+                row["emoji"],
+                _parse_events(row["events"]),
+                row["notes"] or "",
+            )
+            if row["job_hash"] == content_hash:
+                continue
+            conn.execute(_UPSERT_PENDING_JOB_SQL, (row["id"], content_hash))
+            queued += 1
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
     return queued
+
+
+def requeue_stale_processing_jobs(db_path: str | None = None) -> int:
+    """Reset any interrupted 'processing' jobs back to 'pending' on worker startup."""
+    conn = get_connection(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE;")
+        cur = conn.execute(
+            """
+            UPDATE mood_image_jobs
+            SET status = 'pending',
+                error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE status = 'processing'
+            """
+        )
+        conn.commit()
+        return cur.rowcount
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def claim_next_image_job(db_path: str | None = None) -> dict | None:
@@ -592,42 +624,93 @@ def claim_next_image_job(db_path: str | None = None) -> dict | None:
         conn.close()
 
 
-def complete_image_job(slide_id: int, prompt: str, image_path: str, db_path: str | None = None) -> None:
-    """Mark a claimed image job as ready with its generated prompt and image path."""
+def complete_image_job(
+    slide_id: int,
+    prompt: str,
+    image_path: str,
+    db_path: str | None = None,
+    expected_hash: str | None = None,
+) -> bool:
+    """Mark a claimed image job as ready with its generated prompt and image path.
+
+    When expected_hash is provided, only updates if status is 'processing' and
+    content_hash still matches expected_hash. Returns True if a row was updated.
+    """
     conn = get_connection(db_path)
     try:
         with conn:
-            conn.execute(
-                """
-                UPDATE mood_image_jobs
-                SET status = 'ready',
-                    prompt = ?,
-                    image_path = ?,
-                    error = NULL,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE slide_id = ?
-                """,
-                (prompt, image_path, slide_id),
-            )
+            if expected_hash is not None:
+                cur = conn.execute(
+                    """
+                    UPDATE mood_image_jobs
+                    SET status = 'ready',
+                        prompt = ?,
+                        image_path = ?,
+                        error = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE slide_id = ?
+                      AND status = 'processing'
+                      AND content_hash = ?
+                    """,
+                    (prompt, image_path, slide_id, expected_hash),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    UPDATE mood_image_jobs
+                    SET status = 'ready',
+                        prompt = ?,
+                        image_path = ?,
+                        error = NULL,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE slide_id = ?
+                    """,
+                    (prompt, image_path, slide_id),
+                )
+            return cur.rowcount > 0
     finally:
         conn.close()
 
 
-def fail_image_job(slide_id: int, error: str, db_path: str | None = None) -> None:
-    """Mark an image job as failed with an error message."""
+def fail_image_job(
+    slide_id: int,
+    error: str,
+    db_path: str | None = None,
+    expected_hash: str | None = None,
+) -> bool:
+    """Mark an image job as failed with an error message.
+
+    When expected_hash is provided, only updates if status is 'processing' and
+    content_hash still matches expected_hash. Returns True if a row was updated.
+    """
     conn = get_connection(db_path)
     try:
         with conn:
-            conn.execute(
-                """
-                UPDATE mood_image_jobs
-                SET status = 'failed',
-                    error = ?,
-                    updated_at = CURRENT_TIMESTAMP
-                WHERE slide_id = ?
-                """,
-                (str(error), slide_id),
-            )
+            if expected_hash is not None:
+                cur = conn.execute(
+                    """
+                    UPDATE mood_image_jobs
+                    SET status = 'failed',
+                        error = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE slide_id = ?
+                      AND status = 'processing'
+                      AND content_hash = ?
+                    """,
+                    (str(error), slide_id, expected_hash),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    UPDATE mood_image_jobs
+                    SET status = 'failed',
+                        error = ?,
+                        updated_at = CURRENT_TIMESTAMP
+                    WHERE slide_id = ?
+                    """,
+                    (str(error), slide_id),
+                )
+            return cur.rowcount > 0
     finally:
         conn.close()
 

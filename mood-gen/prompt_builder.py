@@ -35,53 +35,16 @@ _EMOJI_CUES = {
     "🌊": "churning ocean waves",
 }
 
-_ROBOT_KEYWORDS = (
-    "robot",
-    "robotics",
-    "android",
-    "automaton",
-    "cyborg",
-    "mech",
-    "machine",
-    "ai ",
-    "bot",
-    "rocket",
+_ROBOT_RE = re.compile(
+    r"\b(?:robot|robotics|android|automaton|cyborg|mech|machine|ai|bot|rocket)\b"
 )
 
-_ANIMAL_KEYWORDS = (
-    "animal",
-    "dog",
-    "cat",
-    "bird",
-    "wolf",
-    "fox",
-    "bear",
-    "horse",
-    "owl",
-    "fish",
-    "pet",
-    "wildlife",
-    "deer",
+_ANIMAL_RE = re.compile(
+    r"\b(?:animal|dog|cat|bird|wolf|fox|bear|horse|owl|fish|pet|wildlife|deer)\b"
 )
 
-_HUMANOID_KEYWORDS = (
-    "human",
-    "humanoid",
-    "person",
-    "people",
-    "friend",
-    "family",
-    "child",
-    "kid",
-    "birth",
-    "school",
-    "graduat",
-    "partner",
-    "crowd",
-    "walk",
-    "team",
-    "alone",
-    "portrait",
+_HUMANOID_RE = re.compile(
+    r"\b(?:human|humanoid|person|people|friend|family|child|kid|birth|school|graduat\w*|partner|crowd|walk|team|alone|portrait)\b"
 )
 
 
@@ -121,13 +84,13 @@ def _mood_atmosphere(mood: float) -> str:
 
 def _extract_motifs(combined_lower: str, emoji: str) -> list[str]:
     motifs: list[str] = []
-    if any(kw in combined_lower for kw in _ROBOT_KEYWORDS) or "🤖" in emoji or "🚀" in emoji:
+    if _ROBOT_RE.search(combined_lower) or "🤖" in emoji or "🚀" in emoji:
         motifs.append("abstract geometric robot figure")
-    if any(kw in combined_lower for kw in _ANIMAL_KEYWORDS) or any(
+    if _ANIMAL_RE.search(combined_lower) or any(
         e in emoji for e in ("🐶", "🐱", "🐺", "🦊", "🐦", "🦉", "🐾")
     ):
         motifs.append("expressive symbolic animal silhouette")
-    if any(kw in combined_lower for kw in _HUMANOID_KEYWORDS) or any(
+    if _HUMANOID_RE.search(combined_lower) or any(
         e in emoji for e in ("👶", "🎒", "🎓", "💼", "🧑", "👨", "👩", "🤝")
     ):
         motifs.append("abstract humanoid figure")

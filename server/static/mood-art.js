@@ -24,54 +24,9 @@
     },
   };
 
-  var ROBOT_KEYWORDS = [
-    "robot",
-    "robotics",
-    "android",
-    "automaton",
-    "cyborg",
-    "mech",
-    "machine",
-    "ai ",
-    "bot",
-    "rocket",
-  ];
-
-  var ANIMAL_KEYWORDS = [
-    "animal",
-    "dog",
-    "cat",
-    "bird",
-    "wolf",
-    "fox",
-    "bear",
-    "horse",
-    "owl",
-    "fish",
-    "pet",
-    "wildlife",
-    "deer",
-  ];
-
-  var HUMANOID_KEYWORDS = [
-    "human",
-    "humanoid",
-    "person",
-    "people",
-    "friend",
-    "family",
-    "child",
-    "kid",
-    "birth",
-    "school",
-    "graduat",
-    "partner",
-    "crowd",
-    "walk",
-    "team",
-    "alone",
-    "portrait",
-  ];
+  var ROBOT_RE = /\b(?:robot|robotics|android|automaton|cyborg|mech|machine|ai|bot|rocket)\b/;
+  var ANIMAL_RE = /\b(?:animal|dog|cat|bird|wolf|fox|bear|horse|owl|fish|pet|wildlife|deer)\b/;
+  var HUMANOID_RE = /\b(?:human|humanoid|person|people|friend|family|child|kid|birth|school|graduat\w*|partner|crowd|walk|team|alone|portrait)\b/;
 
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
@@ -172,35 +127,26 @@
     return fnv1a32(seedText);
   }
 
-  function containsAny(haystack, keywords) {
-    for (var i = 0; i < keywords.length; i++) {
-      if (haystack.indexOf(keywords[i]) !== -1) {
-        return true;
-      }
-    }
-    return false;
-  }
-
   function chooseMotif(eventsList, notes, emoji, rng) {
     var combined = (eventsList.join(" ") + " " + notes).toLowerCase();
     var emojiStr = typeof emoji === "string" ? emoji : "";
     var matches = [];
 
     if (
-      containsAny(combined, ROBOT_KEYWORDS) ||
+      ROBOT_RE.test(combined) ||
       emojiStr.indexOf("🤖") !== -1 ||
       emojiStr.indexOf("🚀") !== -1
     ) {
       matches.push("robot");
     }
     if (
-      containsAny(combined, ANIMAL_KEYWORDS) ||
+      ANIMAL_RE.test(combined) ||
       /[🐶🐱🐺🦊🐦🦉🐾]/.test(emojiStr)
     ) {
       matches.push("animal");
     }
     if (
-      containsAny(combined, HUMANOID_KEYWORDS) ||
+      HUMANOID_RE.test(combined) ||
       /[👶🎒🎓💼🧑👨👩🤝]/.test(emojiStr)
     ) {
       matches.push("humanoid");
@@ -215,9 +161,9 @@
     }
 
     var animalSubtype = "wolf";
-    if (combined.indexOf("bird") !== -1 || combined.indexOf("owl") !== -1 || /[🐦🦉]/.test(emojiStr)) {
+    if (/\b(?:bird|owl)\b/.test(combined) || /[🐦🦉]/.test(emojiStr)) {
       animalSubtype = "bird";
-    } else if (combined.indexOf("cat") !== -1 || emojiStr.indexOf("🐱") !== -1) {
+    } else if (/\bcat\b/.test(combined) || emojiStr.indexOf("🐱") !== -1) {
       animalSubtype = "cat";
     } else if (rng() > 0.55) {
       animalSubtype = "bird";

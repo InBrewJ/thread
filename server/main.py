@@ -490,7 +490,12 @@ def api_get_slide_image(slide_id):
         "share_token": row["share_token"],
     }
     token_authorized = bool(
-        token and row["share_token"] and secrets.compare_digest(str(token), str(row["share_token"]))
+        token
+        and row["share_token"]
+        and secrets.compare_digest(
+            str(token).encode("utf-8"),
+            str(row["share_token"]).encode("utf-8"),
+        )
     )
     session_authorized = bool(user and user_can_edit_timeline(user, timeline_ref))
 

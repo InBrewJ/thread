@@ -14,7 +14,7 @@ RUN git clone --depth 1 --recursive --shallow-submodules \
         -DCMAKE_BUILD_TYPE=Release \
         -DSD_BUILD_EXAMPLES=ON \
         -DBUILD_SHARED_LIBS=OFF \
-    && cmake --build build --config Release -j"$(nproc)" --target sd-cli \
+    && cmake --build build --config Release -j2 --target sd-cli \
     && cp build/bin/sd-cli /usr/local/bin/sd-cli
 
 FROM python:3.11-slim

@@ -150,3 +150,60 @@ class TestMoodGen(unittest.TestCase):
             img_map = db.get_slide_image_map("timeline-default", db_path)
             self.assertEqual(img_map[slide_id]["status"], "failed")
             self.assertIn("out of memory", img_map[slide_id]["error"])
+
+    def test_prompt_builder_word_boundary_motifs(self):
+        # "both" must not match "bot"; "ai" at end of string must match robot
+        both_prompt = prompt_builder.build_mood_prompt(5.0, "", ["Both paths"], "Quiet day")
+        self.assertNotIn("robot figure", both_prompt.lower())
+
+        ai_prompt = prompt_builder.build_mood_prompt(7.0, "", ["Exploring ai"], "")
+        self.assertIn("robot figure", ai_prompt.lower())
+
+        grad_prompt = prompt_builder.build_mood_prompt(8.0, "", ["Graduation day"], "")
+        self.assertIn("humanoid figure", grad_prompt.lower())
+
+    def test_process_one_job_discards_stale_render_when_edited_mid_inference(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db_path = os.path.join(tmp, "test.db")
+            images_dir = os.path.join(tmp, "mood_images")
+            os.makedirs(images_dir, exist_ok=True)
+            db.init_db(db_path)
+            slide_id = db.add_slide("timeline-default", 35, 6.0, "✨", ["First"], "Initial")
+            h1 = db.compute_slide_content_hash(6.0, "✨", ["First"], "Initial")
+            h2 = db.compute_slide_content_hash(2.0, "🌧️", ["Edited"], "Changed")
+            db.enqueue_slide_image_job(slide_id, h1, db_path)
+
+            out_file = os.path.join(images_dir, f"{slide_id}.png")
+            with open(out_file, "wb") as f:
+                f.write(b"existing-image")
+
+            captured_kwargs = {}
+
+            def mid_edit_runner(cmd, **kwargs):
+                captured_kwargs.update(kwargs)
+                self.assertIn("--vae-tiling", cmd)
+                # Simulate slide edit arriving while sd-cli is running
+                db.enqueue_slide_image_job(slide_id, h2, db_path)
+
+                out_idx = cmd.index("-o") + 1
+                from PIL import Image
+                Image.new("RGB", (64, 64), (10, 20, 30)).save(cmd[out_idx])
+
+                class Res:
+                    returncode = 0
+                    stderr = ""
+
+                return Res()
+
+            processed = worker.process_one_job(db_path, images_dir, "sd-cli", "/fake/model.gguf", runner=mid_edit_runner)
+            self.assertTrue(processed)
+            self.assertEqual(captured_kwargs.get("timeout"), float(worker.DEFAULT_SD_TIMEOUT_SECONDS))
+
+            # Job must remain pending with H2, and existing PNG must not be overwritten
+            img_map = db.get_slide_image_map("timeline-default", db_path)
+            self.assertEqual(img_map[slide_id]["status"], "pending")
+            self.assertEqual(img_map[slide_id]["content_hash"], h2)
+            with open(out_file, "rb") as f:
+                self.assertEqual(f.read(), b"existing-image")
+            leftover = [f for f in os.listdir(images_dir) if "staging" in f or ".tmp" in f]
+            self.assertEqual(leftover, [])
