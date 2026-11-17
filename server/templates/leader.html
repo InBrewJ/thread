@@ -15,6 +15,7 @@
   <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
   <script src="/static/cardinal-splines.js"></script>
   <script src="/static/graph.js"></script>
+  <script src="/static/mood-art.js"></script>
   <script src="/static/qrcode.min.js"></script>
 </head>
 <body style="background: var(--bg-primary);">
@@ -101,6 +102,14 @@
             </select>
           </div>
         </div>
+
+        <div class="mode-toggle-row">
+          <span class="mode-toggle-label">Artwork Mode</span>
+          <div class="mode-toggle" role="group" aria-label="Artwork display mode">
+            <button type="button" id="mode-btn-full" class="mode-toggle-btn active" data-mode="full" aria-pressed="true" onclick="setImageMode('full')">Full Scene</button>
+            <button type="button" id="mode-btn-generative" class="mode-toggle-btn" data-mode="generative" aria-pressed="false" onclick="setImageMode('generative')">Generative Art</button>
+          </div>
+        </div>
       </div>
 
       <!-- Mini timeline preview curve -->
@@ -158,6 +167,13 @@
           </div>
         </div>
 
+        <div class="mood-artwork-wrap">
+          <div class="mood-artwork-frame" id="mood-artwork-frame">
+            <img id="slide-artwork-img" alt="Mood scene artwork" style="display: none;">
+            <canvas id="slide-artwork-canvas" width="400" height="400" style="display: none;"></canvas>
+          </div>
+        </div>
+
         <div style="margin-top: 1rem;">
           <div class="metric-label">Notable Events</div>
           <ul id="events-list" class="events-list"></ul>
@@ -177,6 +193,8 @@
     const slides = {{ slides|tojson }};
 
     let currentSlide = 0;
+    let imageMode = "full";
+    let artworkRenderSeq = 0;
     const socket = io();
 
     socket.on("connect", () => {
@@ -185,9 +203,15 @@
     });
 
     socket.on("room_state", (state) => {
+      if (state.image_mode === "full" || state.image_mode === "generative") {
+        imageMode = state.image_mode;
+        updateModeToggleUI();
+      }
       if (state.current_slide !== undefined && state.current_slide < slides.length) {
         currentSlide = state.current_slide;
         updateSlideView(currentSlide);
+      } else {
+        renderSlideArtwork(currentSlide);
       }
       if (state.follower_count !== undefined) {
         document.getElementById("follower-count").textContent = state.follower_count;
@@ -205,6 +229,79 @@
       currentSlide = data.slide_index;
       updateSlideView(currentSlide);
     });
+
+    socket.on("update_image_mode", (data) => {
+      if (data && (data.mode === "full" || data.mode === "generative")) {
+        imageMode = data.mode;
+        updateModeToggleUI();
+        renderSlideArtwork(currentSlide);
+      }
+    });
+
+    function updateModeToggleUI() {
+      const fullBtn = document.getElementById("mode-btn-full");
+      const genBtn = document.getElementById("mode-btn-generative");
+      if (fullBtn) {
+        const isFull = imageMode === "full";
+        fullBtn.classList.toggle("active", isFull);
+        fullBtn.setAttribute("aria-pressed", isFull ? "true" : "false");
+      }
+      if (genBtn) {
+        const isGen = imageMode === "generative";
+        genBtn.classList.toggle("active", isGen);
+        genBtn.setAttribute("aria-pressed", isGen ? "true" : "false");
+      }
+    }
+
+    function setImageMode(mode) {
+      if (mode !== "full" && mode !== "generative") return;
+      imageMode = mode;
+      updateModeToggleUI();
+      renderSlideArtwork(currentSlide);
+      socket.emit("set_image_mode", { timeline_id: timelineId, mode });
+    }
+
+    function renderSlideArtwork(index) {
+      const img = document.getElementById("slide-artwork-img");
+      const canvas = document.getElementById("slide-artwork-canvas");
+      if (!img || !canvas || !slides || slides.length === 0) return;
+
+      const clampedIndex = Math.max(0, Math.min(index, slides.length - 1));
+      const slide = slides[clampedIndex];
+      const prevSlide = clampedIndex > 0 ? slides[clampedIndex - 1] : null;
+      const seq = ++artworkRenderSeq;
+
+      function showCanvasFallback() {
+        img.style.display = "none";
+        canvas.style.display = "block";
+        if (typeof window.renderMoodArt === "function") {
+          window.renderMoodArt(canvas, slide, prevSlide);
+        }
+      }
+
+      if (imageMode === "full" && slide && slide.image_ready && slide.id) {
+        const imageUrl = `/api/slides/${slide.id}/image?v=${encodeURIComponent(slide.image_hash || "")}`;
+        if (img.getAttribute("data-src") === imageUrl && img.complete && img.naturalWidth > 0) {
+          canvas.style.display = "none";
+          img.style.display = "block";
+          return;
+        }
+        showCanvasFallback();
+        img.onload = () => {
+          if (seq !== artworkRenderSeq) return;
+          canvas.style.display = "none";
+          img.style.display = "block";
+        };
+        img.onerror = () => {
+          if (seq !== artworkRenderSeq) return;
+          showCanvasFallback();
+        };
+        img.setAttribute("data-src", imageUrl);
+        img.src = imageUrl;
+      } else {
+        showCanvasFallback();
+      }
+    }
 
     const backButton = document.getElementById("control-back");
     const forwardButton = document.getElementById("control-forward");
@@ -287,6 +384,7 @@
       badge.style.border = `1px solid ${moodColor}`;
 
       document.getElementById("emoji").textContent = slide.emoji || "";
+      renderSlideArtwork(index);
 
       const eventsList = document.getElementById("events-list");
       eventsList.innerHTML = "";

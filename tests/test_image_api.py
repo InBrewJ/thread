@@ -232,3 +232,23 @@ class TestImageAPI(unittest.TestCase):
         leader.disconnect()
         follower.disconnect()
         late.disconnect()
+
+    def test_leader_and_watch_templates_render_artwork_ui(self):
+        res_watch = self.client.get(f"/watch/{self.share_token}")
+        self.assertEqual(res_watch.status_code, 200)
+        watch_html = res_watch.get_data(as_text=True)
+        self.assertIn("/static/mood-art.js", watch_html)
+        self.assertIn("mood-artwork-frame", watch_html)
+        self.assertIn("update_image_mode", watch_html)
+        self.assertIn("shareToken", watch_html)
+
+        self._login_as(self.owner_id)
+        res_lead = self.client.get(f"/lead/{self.timeline_id}")
+        self.assertEqual(res_lead.status_code, 200)
+        lead_html = res_lead.get_data(as_text=True)
+        self.assertIn("/static/mood-art.js", lead_html)
+        self.assertIn("mood-artwork-frame", lead_html)
+        self.assertIn("Full Scene", lead_html)
+        self.assertIn("Generative Art", lead_html)
+        self.assertIn("set_image_mode", lead_html)
+        self.assertIn("update_image_mode", lead_html)

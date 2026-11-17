@@ -15,6 +15,7 @@
   <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
   <script src="/static/cardinal-splines.js"></script>
   <script src="/static/graph.js"></script>
+  <script src="/static/mood-art.js"></script>
 </head>
 <body style="background: var(--bg-primary);">
   <nav class="navbar">
@@ -98,6 +99,13 @@
           </div>
         </div>
 
+        <div class="mood-artwork-wrap">
+          <div class="mood-artwork-frame" id="mood-artwork-frame">
+            <img id="slide-artwork-img" alt="Mood scene artwork" style="display: none;">
+            <canvas id="slide-artwork-canvas" width="400" height="400" style="display: none;"></canvas>
+          </div>
+        </div>
+
         <div style="margin-top: 1rem;">
           <div class="metric-label">Notable Events</div>
           <ul id="events-list" class="events-list"></ul>
@@ -113,10 +121,13 @@
 
   <script>
     const timelineId = {{ timeline.id|tojson }};
+    const shareToken = {{ timeline.share_token|tojson }};
     const birthday = {{ timeline.birthday|tojson }};
     const slides = {{ slides|tojson }};
 
     let currentSlide = 0;
+    let imageMode = "full";
+    let artworkRenderSeq = 0;
     const socket = io();
 
     socket.on("connect", () => {
@@ -132,9 +143,14 @@
     });
 
     socket.on("room_state", (state) => {
+      if (state.image_mode === "full" || state.image_mode === "generative") {
+        imageMode = state.image_mode;
+      }
       if (state.current_slide !== undefined && state.current_slide < slides.length) {
         currentSlide = state.current_slide;
         updateSlideView(currentSlide);
+      } else {
+        renderSlideArtwork(currentSlide);
       }
     });
 
@@ -143,9 +159,58 @@
       updateSlideView(currentSlide);
     });
 
+    socket.on("update_image_mode", (data) => {
+      if (data && (data.mode === "full" || data.mode === "generative")) {
+        imageMode = data.mode;
+        renderSlideArtwork(currentSlide);
+      }
+    });
+
     socket.on("timeline_data_updated", () => {
       window.location.reload();
     });
+
+    function renderSlideArtwork(index) {
+      const img = document.getElementById("slide-artwork-img");
+      const canvas = document.getElementById("slide-artwork-canvas");
+      if (!img || !canvas || !slides || slides.length === 0) return;
+
+      const clampedIndex = Math.max(0, Math.min(index, slides.length - 1));
+      const slide = slides[clampedIndex];
+      const prevSlide = clampedIndex > 0 ? slides[clampedIndex - 1] : null;
+      const seq = ++artworkRenderSeq;
+
+      function showCanvasFallback() {
+        img.style.display = "none";
+        canvas.style.display = "block";
+        if (typeof window.renderMoodArt === "function") {
+          window.renderMoodArt(canvas, slide, prevSlide);
+        }
+      }
+
+      if (imageMode === "full" && slide && slide.image_ready && slide.id) {
+        const imageUrl = `/api/slides/${slide.id}/image?v=${encodeURIComponent(slide.image_hash || "")}&token=${encodeURIComponent(shareToken)}`;
+        if (img.getAttribute("data-src") === imageUrl && img.complete && img.naturalWidth > 0) {
+          canvas.style.display = "none";
+          img.style.display = "block";
+          return;
+        }
+        showCanvasFallback();
+        img.onload = () => {
+          if (seq !== artworkRenderSeq) return;
+          canvas.style.display = "none";
+          img.style.display = "block";
+        };
+        img.onerror = () => {
+          if (seq !== artworkRenderSeq) return;
+          showCanvasFallback();
+        };
+        img.setAttribute("data-src", imageUrl);
+        img.src = imageUrl;
+      } else {
+        showCanvasFallback();
+      }
+    }
 
     function updateSlideView(index) {
       if (!slides || slides.length === 0) return;
@@ -167,6 +232,7 @@
       badge.style.border = `1px solid ${moodColor}`;
 
       document.getElementById("emoji").textContent = slide.emoji || "";
+      renderSlideArtwork(index);
 
       const eventsList = document.getElementById("events-list");
       eventsList.innerHTML = "";
