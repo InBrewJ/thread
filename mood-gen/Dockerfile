@@ -24,7 +24,9 @@ WORKDIR /app
 ENV PYTHONUNBUFFERED=1 \
     DATABASE_PATH=/app/data/timeline.db \
     IMAGES_DIR=/app/data/mood_images \
-    MODEL_PATH=/app/data/models/sd-turbo-q4_0.gguf \
+    MODEL_PATH=/app/data/models/sd-v1-5-q4_0.gguf \
+    SD_STEPS=12 \
+    SD_CFG_SCALE=7.0 \
     SD_CLI_BIN=/usr/local/bin/sd-cli
 
 RUN apt-get update && apt-get install -y --no-install-recommends \

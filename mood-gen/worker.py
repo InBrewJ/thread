@@ -23,10 +23,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger("mood-gen")
 
+DEFAULT_MODEL_PATH = "/app/data/models/sd-v1-5-q4_0.gguf"
 DEFAULT_MODEL_URL = (
     "https://huggingface.co/gpustack/stable-diffusion-v1-5-GGUF/resolve/main/"
     "stable-diffusion-v1-5-Q4_0.gguf"
 )
+DEFAULT_SD_STEPS = 12
+DEFAULT_SD_CFG_SCALE = "7.0"
 
 
 def _default_download(url: str, tmp_path: str) -> None:
@@ -99,7 +102,7 @@ def render_and_resize(
     output_path: str,
     gen_size: int = 256,
     out_size: int = 400,
-    steps: int = 4,
+    steps: int = DEFAULT_SD_STEPS,
     runner=None,
 ) -> None:
     """Invoke sd-cli to render a raw PNG, Lanczos-resize to out_size, and write atomically."""
@@ -133,7 +136,7 @@ def render_and_resize(
             sd_threads = os.environ.get("SD_THREADS", "").strip()
             if sd_threads:
                 cmd.extend(["-t", sd_threads])
-            cfg_scale = os.environ.get("SD_CFG_SCALE", "").strip()
+            cfg_scale = os.environ.get("SD_CFG_SCALE", DEFAULT_SD_CFG_SCALE).strip()
             if cfg_scale:
                 cmd.extend(["--cfg-scale", cfg_scale])
 
@@ -175,7 +178,7 @@ def process_one_job(
     slide_id = int(job["slide_id"])
     gen_size = int(os.environ.get("GEN_SIZE", "256"))
     out_size = int(os.environ.get("OUT_SIZE", "400"))
-    steps = int(os.environ.get("SD_STEPS", "4"))
+    steps = int(os.environ.get("SD_STEPS", str(DEFAULT_SD_STEPS)))
 
     try:
         prompt = build_mood_prompt(
@@ -214,7 +217,7 @@ def main() -> None:
 
     db_path = os.environ.get("DATABASE_PATH", "/app/data/timeline.db")
     images_dir = os.environ.get("IMAGES_DIR", "/app/data/mood_images")
-    model_path = os.environ.get("MODEL_PATH", "/app/data/models/sd-turbo-q4_0.gguf")
+    model_path = os.environ.get("MODEL_PATH", DEFAULT_MODEL_PATH)
     model_url = os.environ.get("MODEL_URL", DEFAULT_MODEL_URL)
     sd_cli_bin = os.environ.get("SD_CLI_BIN", "sd-cli")
     inter_job_sleep = float(os.environ.get("INTER_JOB_SLEEP_SECONDS", "8"))

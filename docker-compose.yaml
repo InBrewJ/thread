@@ -32,8 +32,10 @@ services:
     environment:
       - DATABASE_PATH=/app/data/timeline.db
       - IMAGES_DIR=/app/data/mood_images
-      - MODEL_PATH=/app/data/models/sd-turbo-q4_0.gguf
+      - MODEL_PATH=/app/data/models/sd-v1-5-q4_0.gguf
       - MODEL_URL=https://huggingface.co/gpustack/stable-diffusion-v1-5-GGUF/resolve/main/stable-diffusion-v1-5-Q4_0.gguf
+      - SD_STEPS=12
+      - SD_CFG_SCALE=7.0
       - INTER_JOB_SLEEP_SECONDS=8
       - SD_THREADS=2
     volumes:

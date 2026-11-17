@@ -75,6 +75,12 @@ class TestMoodGen(unittest.TestCase):
             self.assertFalse(os.path.exists(empty_target))
             self.assertFalse(os.path.exists(empty_target + ".tmp"))
 
+    def test_default_model_config_is_consistent(self):
+        self.assertTrue(worker.DEFAULT_MODEL_PATH.endswith("sd-v1-5-q4_0.gguf"))
+        self.assertIn("stable-diffusion-v1-5-Q4_0.gguf", worker.DEFAULT_MODEL_URL)
+        self.assertEqual(worker.DEFAULT_SD_STEPS, 12)
+        self.assertEqual(worker.DEFAULT_SD_CFG_SCALE, "7.0")
+
     def test_process_one_job_marks_ready_on_success(self):
         with tempfile.TemporaryDirectory() as tmp:
             db_path = os.path.join(tmp, "test.db")
@@ -82,7 +88,10 @@ class TestMoodGen(unittest.TestCase):
             db.init_db(db_path)
             db.backfill_missing_image_jobs(db_path)
 
+            captured_cmds = []
+
             def fake_runner(cmd, **kwargs):
+                captured_cmds.append(cmd)
                 out_idx = cmd.index("-o") + 1
                 raw_path = cmd[out_idx]
                 from PIL import Image
@@ -96,6 +105,10 @@ class TestMoodGen(unittest.TestCase):
 
             processed = worker.process_one_job(db_path, images_dir, "sd-cli", "/fake/model.gguf", runner=fake_runner)
             self.assertTrue(processed)
+            self.assertEqual(len(captured_cmds), 1)
+            cmd = captured_cmds[0]
+            self.assertEqual(cmd[cmd.index("--steps") + 1], "12")
+            self.assertEqual(cmd[cmd.index("--cfg-scale") + 1], "7.0")
 
             img_map = db.get_slide_image_map("timeline-default", db_path)
             ready_jobs = [j for j in img_map.values() if j["status"] == "ready"]
