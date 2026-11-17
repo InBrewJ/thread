@@ -1,3 +1,4 @@
+import hashlib
 import os
 import json
 import secrets
@@ -77,8 +78,10 @@ else:
 def get_connection(db_path=None):
     path = db_path or DATABASE_PATH
     os.makedirs(os.path.dirname(os.path.abspath(path)), exist_ok=True)
-    conn = sqlite3.connect(path)
+    conn = sqlite3.connect(path, timeout=10.0)
     conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA journal_mode = WAL;")
+    conn.execute("PRAGMA busy_timeout = 5000;")
     conn.execute("PRAGMA foreign_keys = ON;")
     return conn
 
@@ -125,10 +128,22 @@ def init_db(db_path=None):
                 FOREIGN KEY (timeline_id) REFERENCES timelines(id) ON DELETE CASCADE
             );
 
+            CREATE TABLE IF NOT EXISTS mood_image_jobs (
+                slide_id INTEGER PRIMARY KEY,
+                content_hash TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                prompt TEXT,
+                image_path TEXT,
+                error TEXT,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (slide_id) REFERENCES slides(id) ON DELETE CASCADE
+            );
+
             CREATE INDEX IF NOT EXISTS idx_timelines_user ON timelines(user_id);
             CREATE INDEX IF NOT EXISTS idx_timelines_share ON timelines(share_token);
             CREATE INDEX IF NOT EXISTS idx_slides_timeline ON slides(timeline_id);
             CREATE INDEX IF NOT EXISTS idx_slides_age ON slides(age);
+            CREATE INDEX IF NOT EXISTS idx_mood_jobs_status ON mood_image_jobs(status);
             """
         )
 
@@ -329,6 +344,18 @@ def delete_timeline(timeline_id, user_id):
     conn.close()
 
 
+def _parse_events(raw_events) -> list:
+    if isinstance(raw_events, list):
+        return raw_events
+    if not raw_events:
+        return []
+    try:
+        parsed = json.loads(raw_events)
+        return parsed if isinstance(parsed, list) else [str(parsed)]
+    except Exception:
+        return [e.strip() for e in str(raw_events).split(",") if e.strip()]
+
+
 def get_slides(timeline_id):
     conn = get_connection()
     cursor = conn.cursor()
@@ -344,10 +371,7 @@ def get_slides(timeline_id):
     result = []
     for r in rows:
         d = dict(r)
-        try:
-            d["events"] = json.loads(d["events"]) if d["events"] else []
-        except Exception:
-            d["events"] = [e.strip() for e in str(d["events"]).split(",") if e.strip()]
+        d["events"] = _parse_events(d["events"])
         result.append(d)
     conn.close()
     return result
@@ -362,10 +386,7 @@ def get_slide(slide_id):
     if not row:
         return None
     d = dict(row)
-    try:
-        d["events"] = json.loads(d["events"]) if d["events"] else []
-    except Exception:
-        d["events"] = [e.strip() for e in str(d["events"]).split(",") if e.strip()]
+    d["events"] = _parse_events(d["events"])
     return d
 
 
@@ -441,3 +462,203 @@ def replace_slides(timeline_id, slides_list):
             )
         conn.execute("UPDATE timelines SET updated_at = CURRENT_TIMESTAMP WHERE id = ?", (timeline_id,))
     conn.close()
+
+
+_UPSERT_PENDING_JOB_SQL = """
+    INSERT INTO mood_image_jobs (slide_id, content_hash, status, error, updated_at)
+    VALUES (?, ?, 'pending', NULL, CURRENT_TIMESTAMP)
+    ON CONFLICT(slide_id) DO UPDATE SET
+        content_hash = excluded.content_hash,
+        status = 'pending',
+        error = NULL,
+        updated_at = CURRENT_TIMESTAMP
+"""
+
+
+def compute_slide_content_hash(mood: float, emoji: str, events: list, notes: str) -> str:
+    """Compute a deterministic SHA-256 hash of a slide's image-relevant fields."""
+    norm_events = [str(e) for e in _parse_events(events)]
+    payload = json.dumps(
+        {
+            "mood": float(mood),
+            "emoji": str(emoji or ""),
+            "events": norm_events,
+            "notes": str(notes or ""),
+        },
+        sort_keys=True,
+        ensure_ascii=False,
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def enqueue_slide_image_job(slide_id: int, content_hash: str, db_path: str | None = None) -> bool:
+    """Enqueue or re-queue a slide image job when missing, failed, or content_hash changed."""
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            row = conn.execute(
+                "SELECT content_hash, status FROM mood_image_jobs WHERE slide_id = ?",
+                (slide_id,),
+            ).fetchone()
+            if row is not None and row["content_hash"] == content_hash and row["status"] != "failed":
+                return False
+            conn.execute(_UPSERT_PENDING_JOB_SQL, (slide_id, content_hash))
+            return True
+    finally:
+        conn.close()
+
+
+def backfill_missing_image_jobs(db_path: str | None = None) -> int:
+    """Queue image jobs for slides missing a job or whose content_hash is stale."""
+    conn = get_connection(db_path)
+    queued = 0
+    try:
+        with conn:
+            rows = conn.execute(
+                """
+                SELECT s.id, s.mood, s.emoji, s.events, s.notes, j.content_hash AS job_hash
+                FROM slides s
+                LEFT JOIN mood_image_jobs j ON j.slide_id = s.id
+                ORDER BY s.id ASC
+                """
+            ).fetchall()
+            for row in rows:
+                content_hash = compute_slide_content_hash(
+                    row["mood"],
+                    row["emoji"],
+                    _parse_events(row["events"]),
+                    row["notes"] or "",
+                )
+                if row["job_hash"] == content_hash:
+                    continue
+                conn.execute(_UPSERT_PENDING_JOB_SQL, (row["id"], content_hash))
+                queued += 1
+    finally:
+        conn.close()
+    return queued
+
+
+def claim_next_image_job(db_path: str | None = None) -> dict | None:
+    """Atomically claim the next pending image job and return it with joined slide fields."""
+    conn = get_connection(db_path)
+    try:
+        conn.execute("BEGIN IMMEDIATE;")
+        job_row = conn.execute(
+            """
+            UPDATE mood_image_jobs
+            SET status = 'processing',
+                error = NULL,
+                updated_at = CURRENT_TIMESTAMP
+            WHERE slide_id = (
+                SELECT j.slide_id
+                FROM mood_image_jobs j
+                JOIN slides s ON s.id = j.slide_id
+                WHERE j.status = 'pending'
+                ORDER BY j.updated_at DESC, j.slide_id ASC
+                LIMIT 1
+            )
+            RETURNING slide_id, content_hash, status, prompt, image_path, error, updated_at
+            """
+        ).fetchone()
+        if job_row is None:
+            conn.rollback()
+            return None
+        slide_row = conn.execute(
+            """
+            SELECT timeline_id, age, mood, emoji, events, notes
+            FROM slides
+            WHERE id = ?
+            """,
+            (job_row["slide_id"],),
+        ).fetchone()
+        conn.commit()
+        result = dict(job_row)
+        if slide_row is not None:
+            result.update(
+                {
+                    "timeline_id": slide_row["timeline_id"],
+                    "age": slide_row["age"],
+                    "mood": slide_row["mood"],
+                    "emoji": slide_row["emoji"],
+                    "events": _parse_events(slide_row["events"]),
+                    "notes": slide_row["notes"] or "",
+                }
+            )
+        return result
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def complete_image_job(slide_id: int, prompt: str, image_path: str, db_path: str | None = None) -> None:
+    """Mark a claimed image job as ready with its generated prompt and image path."""
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            conn.execute(
+                """
+                UPDATE mood_image_jobs
+                SET status = 'ready',
+                    prompt = ?,
+                    image_path = ?,
+                    error = NULL,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE slide_id = ?
+                """,
+                (prompt, image_path, slide_id),
+            )
+    finally:
+        conn.close()
+
+
+def fail_image_job(slide_id: int, error: str, db_path: str | None = None) -> None:
+    """Mark an image job as failed with an error message."""
+    conn = get_connection(db_path)
+    try:
+        with conn:
+            conn.execute(
+                """
+                UPDATE mood_image_jobs
+                SET status = 'failed',
+                    error = ?,
+                    updated_at = CURRENT_TIMESTAMP
+                WHERE slide_id = ?
+                """,
+                (str(error), slide_id),
+            )
+    finally:
+        conn.close()
+
+
+def get_slide_image_map(timeline_id: str, db_path: str | None = None) -> dict[int, dict]:
+    """Return a mapping of slide_id to mood_image_jobs row dict for a timeline."""
+    conn = get_connection(db_path)
+    try:
+        rows = conn.execute(
+            """
+            SELECT j.slide_id, j.content_hash, j.status, j.prompt, j.image_path, j.error, j.updated_at
+            FROM mood_image_jobs j
+            JOIN slides s ON s.id = j.slide_id
+            WHERE s.timeline_id = ?
+            """,
+            (timeline_id,),
+        ).fetchall()
+        return {int(row["slide_id"]): dict(row) for row in rows}
+    finally:
+        conn.close()
+
+
+def delete_slide_image_file(slide_id: int, images_dir: str | None = None) -> None:
+    """Delete a slide's generated PNG image from disk if it exists."""
+    target_dir = (
+        images_dir
+        or os.environ.get("MOOD_IMAGES_DIR")
+        or os.path.join(os.path.dirname(os.path.abspath(DATABASE_PATH)), "mood_images")
+    )
+    path = os.path.join(target_dir, f"{int(slide_id)}.png")
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
