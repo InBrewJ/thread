@@ -13,9 +13,10 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
+    send_from_directory,
     session,
     url_for,
-    send_from_directory,
 )
 from flask_cors import CORS
 from flask_socketio import SocketIO, emit, join_room, leave_room
@@ -41,6 +42,12 @@ CORS(app)
 db_path = os.environ.get("DATABASE_PATH")
 db.init_db(db_path)
 
+IMAGES_DIR = (
+    os.environ.get("IMAGES_DIR")
+    or os.environ.get("MOOD_IMAGES_DIR")
+    or os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "mood_images")
+)
+
 # Rauthy / OIDC configuration
 RAUTHY_PUBLIC_URL = os.environ.get("RAUTHY_URL", "https://identity.dryark.uk").rstrip("/")
 RAUTHY_INTERNAL_URL = os.environ.get("RAUTHY_INTERNAL_URL", "http://127.0.0.1:8085").rstrip("/")
@@ -49,8 +56,9 @@ OIDC_CLIENT_SECRET = os.environ.get("OIDC_CLIENT_SECRET", "cb2d9d9b89e03f3c70158
 PUBLIC_APP_URL = os.environ.get("APP_URL", "https://thread.dryark.uk").rstrip("/")
 
 # In-memory presentation room state:
-# rooms[timeline_id] = { "current_slide": int, "leader_sid": str, "followers": set(sid) }
+# rooms[timeline_id] = { "current_slide": int, "leader_sid": str, "followers": set(sid), "image_mode": str }
 rooms = {}
+room_states = rooms
 
 
 def get_base_url():
@@ -68,12 +76,44 @@ def get_base_url():
 
 def get_current_user():
     user_id = session.get("user_id")
+    session_user = session.get("user")
+    if not user_id and isinstance(session_user, dict):
+        user_id = session_user.get("id")
     if not user_id:
         return None
     user = db.get_user(user_id)
     if not user:
-        return {"id": user_id, "username": session.get("username", user_id), "email": session.get("email", "")}
+        fallback = session_user if isinstance(session_user, dict) else {}
+        return {
+            "id": user_id,
+            "username": session.get("username") or fallback.get("username") or user_id,
+            "email": session.get("email") or fallback.get("email") or "",
+        }
     return user
+
+
+def _enrich_slide_dict(slide, image_map):
+    if slide is None:
+        return None
+    job = image_map.get(slide["id"])
+    image_path = os.path.join(IMAGES_DIR, f"{slide['id']}.png")
+    if job:
+        slide["image_hash"] = job.get("content_hash")
+        slide["image_ready"] = bool(
+            job.get("status") == "ready" and os.path.isfile(image_path)
+        )
+    else:
+        slide["image_hash"] = None
+        slide["image_ready"] = False
+    return slide
+
+
+def get_enriched_slides(timeline_id):
+    slides = db.get_slides(timeline_id)
+    image_map = db.get_slide_image_map(timeline_id)
+    for slide in slides:
+        _enrich_slide_dict(slide, image_map)
+    return slides
 
 
 def login_required(f):
@@ -321,7 +361,7 @@ def lead_timeline(timeline_id):
         flash("You do not have permission to lead this timeline.", "error")
         return redirect(url_for("dashboard"))
 
-    slides = db.get_slides(timeline_id)
+    slides = get_enriched_slides(timeline_id)
     base_url = get_base_url()
     follower_url = f"{base_url}/watch/{timeline['share_token']}"
 
@@ -348,7 +388,7 @@ def watch_timeline(share_token):
         flash("Timeline not found or link has expired.", "error")
         return redirect(url_for("home"))
 
-    slides = db.get_slides(timeline["id"])
+    slides = get_enriched_slides(timeline["id"])
     base_url = get_base_url()
 
     return render_template(
@@ -373,7 +413,7 @@ def edit_timeline(timeline_id):
         flash("You do not have permission to edit this timeline.", "error")
         return redirect(url_for("dashboard"))
 
-    slides = db.get_slides(timeline_id)
+    slides = get_enriched_slides(timeline_id)
     base_url = get_base_url()
     follower_url = f"{base_url}/watch/{timeline['share_token']}"
     leader_url = f"{base_url}/lead/{timeline['id']}"
@@ -416,8 +456,54 @@ def api_get_timeline(timeline_id):
     timeline = db.get_timeline(timeline_id)
     if not timeline:
         return jsonify({"error": "Timeline not found"}), 404
-    slides = db.get_slides(timeline_id)
+    slides = get_enriched_slides(timeline_id)
     return jsonify({"timeline": dict(timeline), "slides": slides})
+
+
+@app.route("/api/slides/<int:slide_id>/image", methods=["GET"])
+def api_get_slide_image(slide_id):
+    conn = db.get_connection()
+    try:
+        row = conn.execute(
+            """
+            SELECT s.id AS slide_id, s.timeline_id, t.user_id, t.share_token
+            FROM slides s
+            JOIN timelines t ON s.timeline_id = t.id
+            WHERE s.id = ?
+            """,
+            (slide_id,),
+        ).fetchone()
+    finally:
+        conn.close()
+
+    user = get_current_user()
+    token = request.args.get("token")
+
+    if not row:
+        if not user:
+            return jsonify({"error": "Forbidden"}), 403
+        return jsonify({"error": "Slide not found"}), 404
+
+    timeline_ref = {
+        "id": row["timeline_id"],
+        "user_id": row["user_id"],
+        "share_token": row["share_token"],
+    }
+    token_authorized = bool(
+        token and row["share_token"] and secrets.compare_digest(str(token), str(row["share_token"]))
+    )
+    session_authorized = bool(user and user_can_edit_timeline(user, timeline_ref))
+
+    if not (session_authorized or token_authorized):
+        return jsonify({"error": "Forbidden"}), 403
+
+    image_path = os.path.abspath(os.path.join(IMAGES_DIR, f"{slide_id}.png"))
+    if not os.path.isfile(image_path):
+        return jsonify({"error": "Image not found"}), 404
+
+    resp = send_file(image_path, mimetype="image/png")
+    resp.headers["Cache-Control"] = "private, max-age=3600"
+    return resp
 
 
 @app.route("/api/timeline/new", methods=["POST"])
@@ -479,7 +565,9 @@ def api_add_slide(timeline_id):
     order_index = int(data.get("order_index", 0))
 
     slide_id = db.add_slide(timeline_id, age, mood, emoji, events, notes, order_index)
-    new_slide = db.get_slide(slide_id)
+    content_hash = db.compute_slide_content_hash(mood, emoji, events, notes)
+    db.enqueue_slide_image_job(slide_id, content_hash)
+    new_slide = _enrich_slide_dict(db.get_slide(slide_id), db.get_slide_image_map(timeline_id))
 
     # Notify any open presentation rooms of updated data
     socketio.emit("timeline_data_updated", {"timeline_id": timeline_id}, room=f"room_{timeline_id}")
@@ -515,6 +603,10 @@ def api_update_slide(timeline_id, slide_id):
 
     db.update_slide(slide_id, age, mood, emoji, events, notes, order_index)
     updated_slide = db.get_slide(slide_id)
+    if updated_slide:
+        content_hash = db.compute_slide_content_hash(mood, emoji, events, notes)
+        db.enqueue_slide_image_job(slide_id, content_hash)
+        _enrich_slide_dict(updated_slide, db.get_slide_image_map(timeline_id))
 
     socketio.emit("timeline_data_updated", {"timeline_id": timeline_id}, room=f"room_{timeline_id}")
     return jsonify({"success": True, "slide": updated_slide})
@@ -532,6 +624,7 @@ def api_delete_slide(timeline_id, slide_id):
         return jsonify({"error": "Forbidden"}), 403
 
     db.delete_slide(slide_id)
+    db.delete_slide_image_file(slide_id, IMAGES_DIR)
     socketio.emit("timeline_data_updated", {"timeline_id": timeline_id}, room=f"room_{timeline_id}")
     return jsonify({"success": True})
 
@@ -584,7 +677,15 @@ def api_import_slides(timeline_id):
     if data.get("birthday"):
         db.update_timeline(timeline_id, title=timeline["title"], birthday=data["birthday"])
 
+    old_slides = db.get_slides(timeline_id)
     db.replace_slides(timeline_id, slides_list)
+    for old_slide in old_slides:
+        db.delete_slide_image_file(old_slide["id"], IMAGES_DIR)
+    for new_slide in db.get_slides(timeline_id):
+        content_hash = db.compute_slide_content_hash(
+            new_slide["mood"], new_slide["emoji"], new_slide["events"], new_slide["notes"]
+        )
+        db.enqueue_slide_image_job(new_slide["id"], content_hash)
     socketio.emit("timeline_data_updated", {"timeline_id": timeline_id}, room=f"room_{timeline_id}")
     return jsonify({"success": True, "count": len(slides_list)})
 
@@ -643,6 +744,7 @@ def get_room(timeline_id):
             "current_slide": 0,
             "leader_sid": None,
             "followers": set(),
+            "image_mode": "full",
         }
     return rooms[timeline_id]
 
@@ -664,11 +766,12 @@ def handle_join_room(data):
         r["followers"].add(request.sid)
         print(f"[SocketIO] Follower joined room {room_name} (sid: {request.sid}, count: {len(r['followers'])})")
 
-    # Send current slide index and follower count to caller immediately
+    # Send current slide index, follower count, and image mode to caller immediately
     emit("room_state", {
         "current_slide": r["current_slide"],
         "follower_count": len(r["followers"]),
         "has_leader": r["leader_sid"] is not None,
+        "image_mode": r["image_mode"],
     })
 
     # Broadcast updated follower count to room
@@ -732,6 +835,24 @@ def handle_set_slide(data):
         room_name = f"room_{timeline_id}"
         print(f"[SocketIO] Room {room_name} set -> slide {r['current_slide']}")
         emit("update_slide", {"slide_index": r["current_slide"]}, room=room_name)
+
+
+@socketio.on("set_image_mode")
+def handle_set_image_mode(data):
+    if not isinstance(data, dict):
+        return
+    timeline_id = data.get("timeline_id", "timeline-default")
+    mode = data.get("mode")
+    if mode not in ("full", "generative"):
+        return
+
+    r = get_room(timeline_id)
+    if request.sid == r["leader_sid"] or not r["leader_sid"]:
+        r["leader_sid"] = request.sid
+        r["image_mode"] = mode
+        room_name = f"room_{timeline_id}"
+        print(f"[SocketIO] Room {room_name} image_mode -> {mode}")
+        emit("update_image_mode", {"mode": r["image_mode"]}, room=room_name)
 
 
 if __name__ == "__main__":
