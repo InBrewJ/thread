@@ -85,7 +85,7 @@
       <thead>
         <tr>
           <th style="width: 70px;">Age</th>
-          <th style="width: 100px;">Rough Date</th>
+          <th style="width: 115px;">Rough Date &darr;</th>
           <th style="width: 140px;">Mood (0-10)</th>
           <th style="width: 70px;">Emoji</th>
           <th>Notable Events</th>
@@ -94,7 +94,7 @@
         </tr>
       </thead>
       <tbody id="slidesTableBody">
-        {% for s in slides %}
+        {% for s in slides|reverse %}
           <tr id="row-{{ s.id }}">
             <td><strong>{{ s.age }}</strong></td>
             <td style="color: var(--accent); font-weight: 600;">
@@ -144,13 +144,13 @@
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
         <div class="form-group">
           <label class="form-label">Date (Calendar)</label>
-          <input type="date" id="slideDate" class="form-control" onchange="onDateChanged()">
+          <input type="date" id="slideDate" class="form-control" oninput="onDateChanged()" onchange="onDateChanged()">
           <span style="font-size: 0.75rem; color: var(--text-muted); margin-top: 0.25rem; display: block;">Defaults to today; pick any historic date</span>
         </div>
 
         <div class="form-group">
           <label class="form-label">Age (Years)</label>
-          <input type="number" step="0.1" id="slideAge" class="form-control" required placeholder="e.g. 23.5" oninput="onAgeChanged()">
+          <input type="number" step="any" id="slideAge" class="form-control" required placeholder="e.g. 23.5" oninput="onAgeChanged()">
           <span id="modalDateCalc" style="font-size: 0.75rem; color: var(--accent); margin-top: 0.25rem; display: block;"></span>
         </div>
       </div>
@@ -297,42 +297,65 @@
     return `${year}-${month}-${day}`;
   }
 
+  function parseIsoDateUtc(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+    const parts = dateStr.trim().split('-');
+    if (parts.length !== 3) return null;
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10);
+    const day = parseInt(parts[2], 10);
+    if (!Number.isFinite(year) || !Number.isFinite(month) || !Number.isFinite(day)) return null;
+    return Date.UTC(year, month - 1, day);
+  }
+
+  function formatUtcDateString(utcMs) {
+    const d = new Date(utcMs);
+    const year = d.getUTCFullYear();
+    const month = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function getActiveBirthday() {
+    const input = document.getElementById('settingBirthday');
+    return (input && input.value) ? input.value : birthday;
+  }
+
   function calculateAgeFromDate(birthDateStr, targetDateStr) {
-    if (!birthDateStr || !targetDateStr) return null;
-    const birth = new Date(birthDateStr + 'T00:00:00');
-    const target = new Date(targetDateStr + 'T00:00:00');
-    if (isNaN(birth.getTime()) || isNaN(target.getTime())) return null;
-    const diffDays = (target.getTime() - birth.getTime()) / (1000 * 60 * 60 * 24);
+    const birthUtc = parseIsoDateUtc(birthDateStr);
+    const targetUtc = parseIsoDateUtc(targetDateStr);
+    if (birthUtc === null || targetUtc === null) return null;
+    const diffDays = (targetUtc - birthUtc) / (1000 * 60 * 60 * 24);
     const age = diffDays / 365.2425;
-    return Math.round(age * 10) / 10;
+    return Math.round(age * 1000) / 1000;
   }
 
   function calculateDateFromAge(birthDateStr, age) {
-    if (!birthDateStr || isNaN(age)) return "";
-    const birth = new Date(birthDateStr + 'T00:00:00');
-    if (isNaN(birth.getTime())) return "";
-    const targetTime = birth.getTime() + (age * 365.2425 * 24 * 60 * 60 * 1000);
-    const target = new Date(targetTime);
-    return getLocalDateString(target);
+    const birthUtc = parseIsoDateUtc(birthDateStr);
+    if (birthUtc === null || isNaN(age)) return "";
+    const totalDays = Math.round(age * 365.2425);
+    return formatUtcDateString(birthUtc + totalDays * 24 * 60 * 60 * 1000);
   }
 
   function onDateChanged() {
     const dateVal = document.getElementById('slideDate').value;
-    if (dateVal && birthday) {
-      const age = calculateAgeFromDate(birthday, dateVal);
+    const activeBirthday = getActiveBirthday();
+    if (dateVal && activeBirthday) {
+      const age = calculateAgeFromDate(activeBirthday, dateVal);
       if (age !== null) {
         document.getElementById('slideAge').value = age;
         document.getElementById('modalDateCalc').textContent = `Calculated: Age ${age} on ${dateVal}`;
       }
-    } else if (dateVal && !birthday) {
+    } else if (dateVal && !activeBirthday) {
       document.getElementById('modalDateCalc').textContent = `Date set to ${dateVal}. Set birthday above to auto-calculate age.`;
     }
   }
 
   function onAgeChanged() {
     const ageVal = parseFloat(document.getElementById('slideAge').value);
-    if (!isNaN(ageVal) && birthday) {
-      const dateStr = calculateDateFromAge(birthday, ageVal);
+    const activeBirthday = getActiveBirthday();
+    if (!isNaN(ageVal) && activeBirthday) {
+      const dateStr = calculateDateFromAge(activeBirthday, ageVal);
       document.getElementById('slideDate').value = dateStr;
       document.getElementById('modalDateCalc').textContent = `Calculated: Approx. Date ${dateStr} (Age ${ageVal})`;
     } else if (!isNaN(ageVal)) {
@@ -405,8 +428,9 @@
     document.getElementById('slideDate').value = todayStr;
 
     // Automatically extrapolate age from today's date and birthday
-    if (birthday) {
-      const age = calculateAgeFromDate(birthday, todayStr);
+    const activeBirthday = getActiveBirthday();
+    if (activeBirthday) {
+      const age = calculateAgeFromDate(activeBirthday, todayStr);
       document.getElementById('slideAge').value = age !== null ? age : "";
       document.getElementById('modalDateCalc').textContent = `Today (${todayStr}): Extrapolated Age ${age}`;
     } else {
@@ -432,8 +456,9 @@
     document.getElementById('slideAge').value = slide.age;
 
     // Extrapolate date from existing age if birthday is set
-    if (birthday) {
-      const dateStr = calculateDateFromAge(birthday, slide.age);
+    const activeBirthday = getActiveBirthday();
+    if (activeBirthday) {
+      const dateStr = calculateDateFromAge(activeBirthday, slide.age);
       document.getElementById('slideDate').value = dateStr;
       document.getElementById('modalDateCalc').textContent = `Approx. Date: ${dateStr} (Age ${slide.age})`;
     } else {

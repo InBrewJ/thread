@@ -4,9 +4,9 @@ function addYearsToDate(dateStr, years) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return "";
-  const totalDays = years * 365.2425;
+  const totalDays = Math.round(years * 365.2425);
   const target = new Date(d.getTime() + totalDays * 24 * 60 * 60 * 1000);
-  return target.toLocaleDateString("en-GB", { month: "short", year: "numeric" });
+  return target.toLocaleDateString("en-GB", { month: "short", year: "numeric", timeZone: "UTC" });
 }
 
 function getMoodColor(mood) {
