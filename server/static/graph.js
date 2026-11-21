@@ -177,20 +177,26 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
 
   // Sync internal resolution with CSS pixel size
   const rect = canvas.getBoundingClientRect();
-  const dpr = window.devicePixelRatio || 1;
-  const displayWidth = Math.max(rect.width || canvas.width || 400, 300);
-  const displayHeight = Math.max(rect.height || canvas.height || 200, 160);
+  if (rect.width === 0 && rect.height === 0) {
+    const computed = window.getComputedStyle ? window.getComputedStyle(canvas) : null;
+    if (computed && computed.display === "none") return;
+  }
 
-  canvas.width = displayWidth * dpr;
-  canvas.height = displayHeight * dpr;
+  const dpr = window.devicePixelRatio || 1;
+  const displayWidth = Math.max(rect.width || canvas.width || 400, 120);
+  const displayHeight = Math.max(rect.height || canvas.height || 140, 48);
+  const isCompact = displayHeight < 110;
+
+  canvas.width = Math.round(displayWidth * dpr);
+  canvas.height = Math.round(displayHeight * dpr);
 
   const ctx = canvas.getContext("2d");
   ctx.scale(dpr, dpr);
   ctx.clearRect(0, 0, displayWidth, displayHeight);
 
   // Background subtle guide zones
-  const padY = 20;
-  const padX = 25;
+  const padY = isCompact ? 10 : 20;
+  const padX = isCompact ? 14 : 25;
   const chartHeight = displayHeight - 2 * padY;
   const plotWidth = displayWidth - 2 * padX;
 
@@ -215,15 +221,23 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
 
   const allPoints = prepareAllPoints(slides, displayWidth, displayHeight, { x: padX, y: padY });
   const pointsToDraw = isFull ? allPoints : allPoints.slice(0, (activeIndex !== undefined ? activeIndex : slides.length - 1) + 1);
+  const dotRadius = isCompact ? 2.5 : 3.5;
+  const activeRadius = isCompact ? 5 : 7;
 
   if (pointsToDraw.length < 2) {
     if (pointsToDraw.length === 1) {
-      // Draw single point
+      // Draw single active starting point
       const p = pointsToDraw[0];
       ctx.fillStyle = getMoodColor(p.mood);
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 6, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, activeRadius, 0, Math.PI * 2);
       ctx.fill();
+
+      ctx.lineWidth = isCompact ? 2 : 2.5;
+      ctx.strokeStyle = "#ffffff";
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, activeRadius, 0, Math.PI * 2);
+      ctx.stroke();
     }
     return;
   }
@@ -361,38 +375,60 @@ function renderTimelineCanvas(canvas, slides, activeIndex, options) {
   }
 
   // Draw smooth spline curve
-  const flatCoords = pointsToDraw.flatMap((p) => [p.x, p.y]);
-  ctx.lineWidth = opt.lineWidth || 3;
-  ctx.strokeStyle = opt.strokeColor || "#38bdf8";
+  function strokePointSequence(pts, strokeStyle, lineWidth) {
+    if (!pts || pts.length < 2) return;
+    const flatCoords = pts.flatMap((p) => [p.x, p.y]);
+    ctx.lineWidth = lineWidth;
+    ctx.strokeStyle = strokeStyle;
 
-  // Use cardinal spline curve if available
-  if (typeof drawCurve === "function") {
-    ctx.beginPath();
-    drawCurve(ctx, flatCoords, tension, false, 24, false);
-    ctx.stroke();
-  } else {
-    ctx.beginPath();
-    ctx.moveTo(flatCoords[0], flatCoords[1]);
-    for (let i = 2; i < flatCoords.length; i += 2) {
-      ctx.lineTo(flatCoords[i], flatCoords[i + 1]);
+    if (typeof drawCurve === "function") {
+      ctx.beginPath();
+      drawCurve(ctx, flatCoords, tension, false, 24, false);
+      ctx.stroke();
+    } else {
+      ctx.beginPath();
+      ctx.moveTo(flatCoords[0], flatCoords[1]);
+      for (let i = 2; i < flatCoords.length; i += 2) {
+        ctx.lineTo(flatCoords[i], flatCoords[i + 1]);
+      }
+      ctx.stroke();
     }
-    ctx.stroke();
+  }
+
+  const curveWidth = opt.lineWidth || (isCompact ? 2.2 : 3);
+  const baseStroke = opt.strokeColor || "#38bdf8";
+  const showProgressSplit = isFull && opt.highlightProgress && activeIndex !== undefined && activeIndex >= 0 && activeIndex < pointsToDraw.length;
+
+  if (showProgressSplit) {
+    // Subtle full thread line in background, then bright progress line up to current slide
+    strokePointSequence(pointsToDraw, "rgba(56, 189, 248, 0.28)", Math.max(1.5, curveWidth - 0.5));
+    if (activeIndex >= 1) {
+      strokePointSequence(pointsToDraw.slice(0, activeIndex + 1), baseStroke, curveWidth);
+    }
+  } else {
+    strokePointSequence(pointsToDraw, baseStroke, curveWidth);
   }
 
   // Draw point dots
   pointsToDraw.forEach((p, idx) => {
     const isActive = activeIndex !== undefined && idx === activeIndex;
+    const isUpcoming = showProgressSplit && idx > activeIndex;
+    ctx.save();
+    if (isUpcoming) {
+      ctx.globalAlpha = 0.42;
+    }
     ctx.fillStyle = getMoodColor(p.mood);
     ctx.beginPath();
-    ctx.arc(p.x, p.y, isActive ? 7 : 3.5, 0, Math.PI * 2);
+    ctx.arc(p.x, p.y, isActive ? activeRadius : dotRadius, 0, Math.PI * 2);
     ctx.fill();
 
     if (isActive) {
-      ctx.lineWidth = 2.5;
+      ctx.lineWidth = isCompact ? 2 : 2.5;
       ctx.strokeStyle = "#ffffff";
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 7, 0, Math.PI * 2);
+      ctx.arc(p.x, p.y, activeRadius, 0, Math.PI * 2);
       ctx.stroke();
     }
+    ctx.restore();
   });
 }

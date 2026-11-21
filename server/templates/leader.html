@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="stage-html">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -18,17 +18,18 @@
   <script src="/static/mood-art.js"></script>
   <script src="/static/qrcode.min.js"></script>
 </head>
-<body style="background: var(--bg-primary);">
+<body class="stage-page leader-page" style="background: var(--bg-primary);">
   <nav class="navbar">
     <div class="navbar-brand-group">
       <a href="/dashboard" class="brand">
         <img src="/static/thread-logo.svg" alt="Thread Logo" width="28" height="28" style="display: block;">
         <span>Thread</span>
       </a>
-      <span class="user-badge" style="background: #065f46; color: #a7f3d0; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em;">LEADER</span>
+      <span class="user-badge stage-role-badge" style="background: #065f46; color: #a7f3d0; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em;">LEADER</span>
       <span class="navbar-title" title="{{ timeline.title }}">{{ timeline.title }}</span>
     </div>
     <div class="navbar-right-group">
+      <span class="stage-progress-pill-mobile" id="slide-counter-mobile">1 / {{ slides|length }}</span>
       <span class="follower-pill-mobile" id="follower-badge-mobile" title="Audience connected">
         👥 <strong id="follower-count-mobile">0</strong>
       </span>
@@ -39,6 +40,30 @@
       </button>
     </div>
     <div class="nav-links" id="navLinks">
+      <div class="mobile-nav-tools">
+        <div class="mobile-nav-row">
+          <button type="button" class="btn btn-primary btn-sm" onclick="copyFollowerLink()">Copy Share Link</button>
+          <button type="button" class="btn btn-secondary btn-sm" onclick="openQrModal()">QR Code</button>
+        </div>
+        <div class="mobile-nav-field">
+          <label for="slide-select-mobile" class="mobile-nav-label">Jump to slide</label>
+          <select id="slide-select-mobile" class="form-control" onchange="jumpToSlide(this.value)">
+            {% for s in slides %}
+              <option value="{{ loop.index0 }}">Age {{ s.age }} - {{ s.emoji }} (Mood {{ s.mood }})</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="mobile-nav-field">
+          <span class="mobile-nav-label">Artwork Mode</span>
+          <div class="mode-toggle" role="group" aria-label="Artwork display mode (mobile)">
+            <button type="button" class="mode-toggle-btn active" data-mode="full" aria-pressed="true" onclick="setImageMode('full')">Full Scene</button>
+            <button type="button" class="mode-toggle-btn" data-mode="generative" aria-pressed="false" onclick="setImageMode('generative')">Generative Art</button>
+          </div>
+        </div>
+        <button id="toggle-spend-btn-mobile" class="btn btn-secondary btn-sm" onclick="toggleSpendingOverlay()" type="button" style="display: none;">
+          💳 Toggle MonMon Spend
+        </button>
+      </div>
       <span class="user-badge" id="follower-badge">
         Followers: <strong id="follower-count">0</strong>
       </span>
@@ -58,7 +83,7 @@
       </div>
 
       <!-- Share Box -->
-      <div style="margin-bottom: 1.5rem;">
+      <div class="leader-share-section" style="margin-bottom: 1.5rem;">
         <label class="form-label" style="display: flex; justify-content: space-between; align-items: center;">
           <span>Share with your audience:</span>
           <span style="color: var(--accent); font-size: 0.8rem;">Isolated Room URL</span>
@@ -89,7 +114,7 @@
           </button>
         </div>
 
-        <div style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-primary); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 0.5rem;">
+        <div class="leader-progress-row" style="display: flex; justify-content: space-between; align-items: center; background: var(--bg-primary); padding: 0.75rem 1rem; border-radius: 8px; border: 1px solid var(--border-color); flex-wrap: wrap; gap: 0.5rem;">
           <span style="font-size: 0.95rem; color: var(--text-muted);">
             Progress: <strong id="slide-counter" style="color: var(--text-main);">Slide 1 of {{ slides|length }}</strong>
           </span>
@@ -113,10 +138,10 @@
       </div>
 
       <!-- Mini timeline preview curve -->
-      <div style="margin-top: 1.5rem;">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
-          <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
-            <div class="canvas-title" style="margin-bottom: 0;">Mood Thread Curve Preview</div>
+      <div class="leader-graph-section">
+        <div class="graph-section-header">
+          <div class="graph-header-left">
+            <div class="canvas-title" style="margin-bottom: 0;">Mood Thread</div>
             <div class="graph-legend" style="display: flex; align-items: center; gap: 0.65rem; font-size: 0.72rem; color: var(--text-muted);">
               <span style="display: inline-flex; align-items: center; gap: 0.25rem;">
                 <span style="width: 8px; height: 8px; border-radius: 2px; background: rgba(244, 63, 94, 0.25); border: 1px dashed rgba(244, 63, 94, 0.8);"></span>
@@ -132,12 +157,15 @@
               </span>
             </div>
           </div>
-          <button id="toggle-spend-btn" class="btn btn-secondary btn-sm" onclick="toggleSpendingOverlay()" type="button" style="display: none; padding: 0.2rem 0.5rem; font-size: 0.75rem;">
-            💳 MonMon Spend
-          </button>
+          <div class="graph-header-right">
+            <span id="leader-graph-progress" class="graph-progress-label">1 / {{ slides|length }}</span>
+            <button id="toggle-spend-btn" class="btn btn-secondary btn-sm" onclick="toggleSpendingOverlay()" type="button" style="display: none; padding: 0.2rem 0.5rem; font-size: 0.75rem;">
+              💳 MonMon Spend
+            </button>
+          </div>
         </div>
         <div class="canvas-wrapper">
-          <canvas id="leader-graph" style="height: 140px;"></canvas>
+          <canvas id="leader-graph" class="leader-graph-canvas"></canvas>
         </div>
       </div>
     </div>
@@ -146,24 +174,27 @@
     <div id="right-pane" class="pane">
       <div class="pane-header">
         <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem;">Current Life Stage</h2>
-        <span id="rough-date" style="font-size: 0.9rem; color: var(--accent); font-weight: 600;"></span>
       </div>
 
       <div class="slide-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-          <div class="metric-group" style="margin-bottom: 0;">
-            <div class="metric-label">Age</div>
-            <div id="age" class="metric-value-lg">0</div>
+        <div class="stage-meta-row">
+          <div class="age-date-group">
+            <div class="metric-group" style="margin-bottom: 0;">
+              <div class="metric-label">Age</div>
+              <div id="age" class="metric-value-lg">0</div>
+            </div>
+            <span id="rough-date" class="stage-date"></span>
           </div>
 
-          <div style="display: flex; align-items: center; gap: 0.75rem;">
-            <div id="monmon-spend-pill" class="spend-pill" style="display: none;" title="MonMon 6-month spending window correlation">
-              💳 <span id="monmon-spend-text"></span>
-            </div>
+          <div class="stage-mood-cluster">
             <div id="mood-badge" class="mood-badge" style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7;">
               Mood: <span id="mood">5</span>
             </div>
-            <span id="emoji" style="font-size: 2.25rem;"></span>
+            <span id="emoji" class="emoji-display"></span>
+          </div>
+
+          <div id="monmon-spend-pill" class="spend-pill" style="display: none;" title="MonMon 6-month spending window correlation">
+            💳 <span id="monmon-spend-text"></span>
           </div>
         </div>
 
@@ -175,12 +206,12 @@
           </div>
         </div>
 
-        <div style="margin-top: 1rem;">
+        <div class="events-section">
           <div class="metric-label">Notable Events</div>
           <ul id="events-list" class="events-list"></ul>
         </div>
 
-        <div style="margin-top: 1.25rem;">
+        <div class="notes-section">
           <div class="metric-label">Reflections & Notes</div>
           <div id="notes" class="notes-box"></div>
         </div>
@@ -215,7 +246,10 @@
         renderSlideArtwork(currentSlide);
       }
       if (state.follower_count !== undefined) {
-        document.getElementById("follower-count").textContent = state.follower_count;
+        const el = document.getElementById("follower-count");
+        if (el) el.textContent = state.follower_count;
+        const elMobile = document.getElementById("follower-count-mobile");
+        if (elMobile) elMobile.textContent = state.follower_count;
       }
     });
 
@@ -240,18 +274,11 @@
     });
 
     function updateModeToggleUI() {
-      const fullBtn = document.getElementById("mode-btn-full");
-      const genBtn = document.getElementById("mode-btn-generative");
-      if (fullBtn) {
-        const isFull = imageMode === "full";
-        fullBtn.classList.toggle("active", isFull);
-        fullBtn.setAttribute("aria-pressed", isFull ? "true" : "false");
-      }
-      if (genBtn) {
-        const isGen = imageMode === "generative";
-        genBtn.classList.toggle("active", isGen);
-        genBtn.setAttribute("aria-pressed", isGen ? "true" : "false");
-      }
+      document.querySelectorAll(".mode-toggle-btn[data-mode]").forEach((btn) => {
+        const isActive = btn.getAttribute("data-mode") === imageMode;
+        btn.classList.toggle("active", isActive);
+        btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+      });
     }
 
     function setImageMode(mode) {
@@ -323,6 +350,7 @@
     const backButton = document.getElementById("control-back");
     const forwardButton = document.getElementById("control-forward");
     const slideSelect = document.getElementById("slide-select");
+    const slideSelectMobile = document.getElementById("slide-select-mobile");
 
     backButton.addEventListener("click", () => {
       socket.emit("change_slide_back", { timeline_id: timelineId });
@@ -343,6 +371,12 @@
     // Mobile Burger / Pancake Menu
     const navBurger = document.getElementById("navBurger");
     const navLinks = document.getElementById("navLinks");
+    function closeNavMenu() {
+      if (!navLinks || !navBurger) return;
+      navLinks.classList.remove("open");
+      navBurger.classList.remove("open");
+      navBurger.setAttribute("aria-expanded", "false");
+    }
     if (navBurger && navLinks) {
       navBurger.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -352,22 +386,34 @@
       });
       document.addEventListener("click", (e) => {
         if (!navLinks.contains(e.target) && !navBurger.contains(e.target)) {
-          navLinks.classList.remove("open");
-          navBurger.classList.remove("open");
-          navBurger.setAttribute("aria-expanded", "false");
+          closeNavMenu();
         }
       });
       navLinks.querySelectorAll("a, button").forEach((el) => {
         el.addEventListener("click", () => {
-          navLinks.classList.remove("open");
-          navBurger.classList.remove("open");
-          navBurger.setAttribute("aria-expanded", "false");
+          closeNavMenu();
         });
       });
     }
 
     function jumpToSlide(idx) {
       socket.emit("set_slide", { timeline_id: timelineId, slide_index: parseInt(idx, 10) });
+      closeNavMenu();
+    }
+
+    function isAsciiEmoticon(text) {
+      return Boolean(text) && !/[^\x00-\x7F]/.test(text);
+    }
+
+    function redrawLeaderGraph(index) {
+      const canvas = document.getElementById("leader-graph");
+      renderTimelineCanvas(canvas, slides, index, {
+        isFull: true,
+        highlightProgress: true,
+        tension: 0.25,
+        spendingData: spendingCorrelation,
+        showSpendingOverlay: showSpendingOverlay
+      });
     }
 
     // Keyboard navigation: Left/Right arrows
@@ -400,7 +446,10 @@
       badge.style.color = moodColor;
       badge.style.border = `1px solid ${moodColor}`;
 
-      document.getElementById("emoji").textContent = slide.emoji || "";
+      const emojiEl = document.getElementById("emoji");
+      const emojiText = slide.emoji || "";
+      emojiEl.textContent = emojiText;
+      emojiEl.classList.toggle("emoji-text", isAsciiEmoticon(emojiText));
       renderSlideArtwork(index);
 
       const eventsList = document.getElementById("events-list");
@@ -417,10 +466,20 @@
         li.style.color = "var(--text-muted)";
         eventsList.appendChild(li);
       }
+      eventsList.scrollTop = 0;
 
       document.getElementById("notes").textContent = slide.notes || "No notes recorded.";
       document.getElementById("slide-counter").textContent = `Slide ${index + 1} of ${slides.length}`;
-      slideSelect.value = index;
+      const compactProgress = `${index + 1} / ${slides.length}`;
+      const mobileCounter = document.getElementById("slide-counter-mobile");
+      if (mobileCounter) mobileCounter.textContent = compactProgress;
+      const graphProgress = document.getElementById("leader-graph-progress");
+      if (graphProgress) graphProgress.textContent = compactProgress;
+      if (slideSelect) slideSelect.value = index;
+      if (slideSelectMobile) slideSelectMobile.value = index;
+
+      if (backButton) backButton.classList.toggle("is-boundary", index <= 0);
+      if (forwardButton) forwardButton.classList.toggle("is-boundary", index >= slides.length - 1);
 
       // Check for MonMon spending data in this slide's age window
       const spendPill = document.getElementById("monmon-spend-pill");
@@ -444,13 +503,7 @@
       }
 
       // Update graph canvas
-      const canvas = document.getElementById("leader-graph");
-      renderTimelineCanvas(canvas, slides, index, {
-        isFull: true,
-        tension: 0.25,
-        spendingData: spendingCorrelation,
-        showSpendingOverlay: showSpendingOverlay
-      });
+      redrawLeaderGraph(index);
     }
 
     let spendingCorrelation = null;
@@ -476,6 +529,8 @@
             console.log("[MonMon] Spending correlation loaded:", data.summary);
             const btn = document.getElementById("toggle-spend-btn");
             if (btn) btn.style.display = "inline-flex";
+            const btnMobile = document.getElementById("toggle-spend-btn-mobile");
+            if (btnMobile) btnMobile.style.display = "inline-flex";
             updateLegendVisibility();
             updateSlideView(currentSlide);
           }
@@ -485,18 +540,12 @@
 
     function toggleSpendingOverlay() {
       showSpendingOverlay = !showSpendingOverlay;
-      const btn = document.getElementById("toggle-spend-btn");
-      if (btn) {
-        btn.style.opacity = showSpendingOverlay ? "1" : "0.5";
-      }
-      updateLegendVisibility();
-      const canvas = document.getElementById("leader-graph");
-      renderTimelineCanvas(canvas, slides, currentSlide, {
-        isFull: true,
-        tension: 0.25,
-        spendingData: spendingCorrelation,
-        showSpendingOverlay: showSpendingOverlay
+      ["toggle-spend-btn", "toggle-spend-btn-mobile"].forEach((id) => {
+        const btn = document.getElementById(id);
+        if (btn) btn.style.opacity = showSpendingOverlay ? "1" : "0.5";
       });
+      updateLegendVisibility();
+      redrawLeaderGraph(currentSlide);
     }
 
     function copyFollowerLink() {
@@ -543,19 +592,43 @@
       }
     });
 
+    function syncStageViewportHeight() {
+      const vvHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      const visibleHeight = Math.min(window.innerHeight || vvHeight, vvHeight || window.innerHeight);
+      if (visibleHeight > 0) {
+        document.documentElement.style.setProperty("--stage-vh", `${Math.floor(visibleHeight)}px`);
+      }
+    }
+
+    syncStageViewportHeight();
+
     window.addEventListener("load", () => {
+      syncStageViewportHeight();
       updateSlideView(currentSlide);
       fetchSpendingCorrelation();
+      const leaderCanvas = document.getElementById("leader-graph");
+      if (leaderCanvas && typeof ResizeObserver === "function") {
+        new ResizeObserver(() => redrawLeaderGraph(currentSlide)).observe(leaderCanvas);
+      }
     });
 
     window.addEventListener("resize", () => {
-      const canvas = document.getElementById("leader-graph");
-      renderTimelineCanvas(canvas, slides, currentSlide, {
-        isFull: true,
-        tension: 0.25,
-        spendingData: spendingCorrelation,
-        showSpendingOverlay: showSpendingOverlay
+      syncStageViewportHeight();
+      redrawLeaderGraph(currentSlide);
+    });
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", () => {
+        syncStageViewportHeight();
+        redrawLeaderGraph(currentSlide);
       });
+    }
+
+    window.addEventListener("orientationchange", () => {
+      setTimeout(() => {
+        syncStageViewportHeight();
+        redrawLeaderGraph(currentSlide);
+      }, 120);
     });
   </script>
 

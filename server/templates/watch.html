@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="stage-html">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -17,14 +17,14 @@
   <script src="/static/graph.js"></script>
   <script src="/static/mood-art.js"></script>
 </head>
-<body style="background: var(--bg-primary);">
+<body class="stage-page watch-page" style="background: var(--bg-primary);">
   <nav class="navbar">
     <div class="navbar-brand-group">
       <a href="/" class="brand">
         <img src="/static/thread-logo.svg" alt="Thread Logo" width="28" height="28" style="display: block;">
         <span>Thread</span>
       </a>
-      <span class="user-badge" style="background: #1e3a8a; color: #93c5fd; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em;">WATCH</span>
+      <span class="user-badge stage-role-badge" style="background: #1e3a8a; color: #93c5fd; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.04em;">WATCH</span>
       <span class="navbar-title" title="{{ timeline.title }}">{{ timeline.title }}</span>
     </div>
     <div class="nav-status">
@@ -38,7 +38,7 @@
   </nav>
 
   <div class="split-layout">
-    <!-- Left Pane: Dual Graphs -->
+    <!-- Left Pane: Dual Graphs (Progress only on mobile portrait) -->
     <div id="left-pane" class="pane">
       <div class="pane-header">
         <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem;">Mood Curve Journey</h2>
@@ -47,12 +47,15 @@
         </p>
       </div>
 
-      <div class="canvas-wrapper">
-        <div class="canvas-title">Life Stage Progress</div>
-        <canvas id="graph-current-slide" style="height: 190px;"></canvas>
+      <div class="canvas-wrapper watch-progress-graph-wrapper">
+        <div class="graph-section-header">
+          <div class="canvas-title" style="margin-bottom: 0;">Life Stage Progress</div>
+          <span id="watch-graph-progress" class="graph-progress-label">1 / {{ slides|length }}</span>
+        </div>
+        <canvas id="graph-current-slide" class="watch-progress-canvas"></canvas>
       </div>
 
-      <div class="canvas-wrapper">
+      <div class="canvas-wrapper watch-full-graph-wrapper">
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; flex-wrap: wrap; gap: 0.5rem;">
           <div class="canvas-title" style="margin-bottom: 0;">Full Mood Thread (Overview)</div>
           <div class="graph-legend" style="display: flex; align-items: center; gap: 0.65rem; font-size: 0.72rem; color: var(--text-muted);">
@@ -70,7 +73,7 @@
             </span>
           </div>
         </div>
-        <canvas id="graph-all" style="height: 170px;"></canvas>
+        <canvas id="graph-all" class="watch-full-canvas"></canvas>
       </div>
     </div>
 
@@ -78,24 +81,27 @@
     <div id="right-pane" class="pane">
       <div class="pane-header">
         <h2 style="font-size: 1.4rem; font-weight: 700; margin-bottom: 0.25rem;">Life Stage Details</h2>
-        <span id="rough-date" style="font-size: 0.9rem; color: var(--accent); font-weight: 600;"></span>
       </div>
 
       <div class="slide-card">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.25rem;">
-          <div class="metric-group" style="margin-bottom: 0;">
-            <div class="metric-label">Age</div>
-            <div id="age" class="metric-value-lg">0</div>
+        <div class="stage-meta-row">
+          <div class="age-date-group">
+            <div class="metric-group" style="margin-bottom: 0;">
+              <div class="metric-label">Age</div>
+              <div id="age" class="metric-value-lg">0</div>
+            </div>
+            <span id="rough-date" class="stage-date"></span>
           </div>
 
-          <div style="display: flex; align-items: center; gap: 0.75rem;">
-            <div id="monmon-spend-pill" class="spend-pill" style="display: none;" title="MonMon 6-month spending window correlation">
-              💳 <span id="monmon-spend-text"></span>
-            </div>
+          <div class="stage-mood-cluster">
             <div id="mood-badge" class="mood-badge" style="background: rgba(16, 185, 129, 0.2); color: #6ee7b7;">
               Mood: <span id="mood">5</span>
             </div>
-            <span id="emoji" style="font-size: 2.25rem;"></span>
+            <span id="emoji" class="emoji-display"></span>
+          </div>
+
+          <div id="monmon-spend-pill" class="spend-pill" style="display: none;" title="MonMon 6-month spending window correlation">
+            💳 <span id="monmon-spend-text"></span>
           </div>
         </div>
 
@@ -107,12 +113,12 @@
           </div>
         </div>
 
-        <div style="margin-top: 1rem;">
+        <div class="events-section">
           <div class="metric-label">Notable Events</div>
           <ul id="events-list" class="events-list"></ul>
         </div>
 
-        <div style="margin-top: 1.25rem;">
+        <div class="notes-section">
           <div class="metric-label">Reflections & Notes</div>
           <div id="notes" class="notes-box"></div>
         </div>
@@ -229,6 +235,25 @@
       }
     }
 
+    function isAsciiEmoticon(text) {
+      return Boolean(text) && !/[^\x00-\x7F]/.test(text);
+    }
+
+    function redrawWatchGraphs(index) {
+      // Redraw current slide graph (up to active index)
+      const canvasCurrent = document.getElementById("graph-current-slide");
+      renderTimelineCanvas(canvasCurrent, slides, index, { isFull: false, tension: 0.25, strokeColor: "#38bdf8" });
+
+      // Redraw full timeline graph (hidden on mobile portrait, visible on desktop)
+      const canvasAll = document.getElementById("graph-all");
+      renderTimelineCanvas(canvasAll, slides, index, {
+        isFull: true,
+        tension: 0.25,
+        strokeColor: "#818cf8",
+        spendingData: spendingCorrelation
+      });
+    }
+
     function updateSlideView(index) {
       if (!slides || slides.length === 0) return;
       if (index < 0) index = 0;
@@ -248,7 +273,10 @@
       badge.style.color = moodColor;
       badge.style.border = `1px solid ${moodColor}`;
 
-      document.getElementById("emoji").textContent = slide.emoji || "";
+      const emojiEl = document.getElementById("emoji");
+      const emojiText = slide.emoji || "";
+      emojiEl.textContent = emojiText;
+      emojiEl.classList.toggle("emoji-text", isAsciiEmoticon(emojiText));
       renderSlideArtwork(index);
 
       const eventsList = document.getElementById("events-list");
@@ -265,9 +293,13 @@
         li.style.color = "var(--text-muted)";
         eventsList.appendChild(li);
       }
+      eventsList.scrollTop = 0;
 
       document.getElementById("notes").textContent = slide.notes || "No notes recorded.";
-      document.getElementById("slide-progress").textContent = `${index + 1} / ${slides.length}`;
+      const compactProgress = `${index + 1} / ${slides.length}`;
+      document.getElementById("slide-progress").textContent = compactProgress;
+      const watchGraphProgress = document.getElementById("watch-graph-progress");
+      if (watchGraphProgress) watchGraphProgress.textContent = compactProgress;
 
       // Check for MonMon spending data in this slide's age window
       const spendPill = document.getElementById("monmon-spend-pill");
@@ -290,18 +322,7 @@
         }
       }
 
-      // Redraw current slide graph (up to active index)
-      const canvasCurrent = document.getElementById("graph-current-slide");
-      renderTimelineCanvas(canvasCurrent, slides, index, { isFull: false, tension: 0.25, strokeColor: "#38bdf8" });
-
-      // Redraw full timeline graph (showing all with active dot highlighted and MonMon spend layer)
-      const canvasAll = document.getElementById("graph-all");
-      renderTimelineCanvas(canvasAll, slides, index, {
-        isFull: true,
-        tension: 0.25,
-        strokeColor: "#818cf8",
-        spendingData: spendingCorrelation
-      });
+      redrawWatchGraphs(index);
     }
 
     let spendingCorrelation = null;
@@ -330,13 +351,46 @@
         .catch((err) => console.log("MonMon spending correlation not loaded:", err));
     }
 
+    function syncStageViewportHeight() {
+      const vvHeight = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      const visibleHeight = Math.min(window.innerHeight || vvHeight, vvHeight || window.innerHeight);
+      if (visibleHeight > 0) {
+        document.documentElement.style.setProperty("--stage-vh", `${Math.floor(visibleHeight)}px`);
+      }
+    }
+
+    syncStageViewportHeight();
+
     window.addEventListener("load", () => {
+      syncStageViewportHeight();
       updateSlideView(currentSlide);
       fetchSpendingCorrelation();
+      if (typeof ResizeObserver === "function") {
+        const ro = new ResizeObserver(() => redrawWatchGraphs(currentSlide));
+        const canvasCurrent = document.getElementById("graph-current-slide");
+        const canvasAll = document.getElementById("graph-all");
+        if (canvasCurrent) ro.observe(canvasCurrent);
+        if (canvasAll) ro.observe(canvasAll);
+      }
     });
 
     window.addEventListener("resize", () => {
-      updateSlideView(currentSlide);
+      syncStageViewportHeight();
+      redrawWatchGraphs(currentSlide);
+    });
+
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", () => {
+        syncStageViewportHeight();
+        redrawWatchGraphs(currentSlide);
+      });
+    }
+
+    window.addEventListener("orientationchange", () => {
+      setTimeout(() => {
+        syncStageViewportHeight();
+        redrawWatchGraphs(currentSlide);
+      }, 120);
     });
   </script>
 </body>

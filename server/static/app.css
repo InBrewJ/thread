@@ -347,6 +347,144 @@ button {
   transform: scale(0.98);
 }
 
+.control-btn.is-boundary {
+  opacity: 0.55;
+}
+
+/* Stage Meta & Sections (Leader & Watch shared) */
+.stage-meta-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.15rem;
+}
+
+.age-date-group {
+  display: flex;
+  align-items: baseline;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.stage-date {
+  font-size: 0.92rem;
+  color: var(--accent);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.stage-mood-cluster {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.stage-meta-row .spend-pill {
+  flex-basis: 100%;
+  justify-content: center;
+}
+
+.emoji-display {
+  font-size: 2.15rem;
+  line-height: 1;
+}
+
+.emoji-display.emoji-text {
+  font-size: 1.1rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.02em;
+}
+
+.events-section {
+  margin-top: 1rem;
+}
+
+.notes-section {
+  margin-top: 1.25rem;
+}
+
+.leader-graph-section {
+  margin-top: 1.5rem;
+}
+
+.graph-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.5rem;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.graph-header-left,
+.graph-header-right {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  flex-wrap: wrap;
+}
+
+.graph-progress-label {
+  display: none;
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.leader-graph-canvas {
+  height: 140px;
+}
+
+.watch-progress-canvas {
+  height: 190px;
+}
+
+.watch-full-canvas {
+  height: 170px;
+}
+
+.stage-progress-pill-mobile {
+  display: none;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--text-main);
+  background: var(--bg-tertiary);
+  padding: 0.22rem 0.55rem;
+  border-radius: 9999px;
+  border: 1px solid var(--border-color);
+  white-space: nowrap;
+}
+
+.mobile-nav-tools {
+  display: none;
+}
+
+.mobile-nav-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.5rem;
+}
+
+.mobile-nav-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.mobile-nav-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
 /* Slide Info Card */
 .slide-card {
   background: var(--bg-primary);
@@ -825,5 +963,378 @@ textarea.form-control {
     flex: 1;
     text-align: center;
     padding: 0.45rem 0.5rem;
+  }
+}
+
+/* Mobile Portrait Single-Screen Stage Layout (Leader & Watch) */
+@media (max-width: 900px) {
+  .leader-page .navbar-burger {
+    display: flex;
+  }
+
+  .leader-page .follower-pill-mobile,
+  .leader-page .stage-progress-pill-mobile {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .leader-page .nav-links {
+    display: none;
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    width: 100%;
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    flex-direction: column;
+    align-items: stretch;
+    padding: 0.9rem 1rem 1rem;
+    gap: 0.7rem;
+    box-shadow: 0 12px 28px rgba(0, 0, 0, 0.55);
+    z-index: 1000;
+    max-height: calc(100dvh - 52px);
+    overflow-y: auto;
+  }
+
+  .leader-page .nav-links.open {
+    display: flex;
+  }
+
+  .leader-page .mobile-nav-tools {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid var(--border-color);
+  }
+
+  .leader-page .mobile-nav-tools .mode-toggle {
+    width: 100%;
+  }
+
+  .leader-page .mobile-nav-tools .mode-toggle-btn {
+    flex: 1;
+    text-align: center;
+  }
+
+  .leader-page .nav-links .btn {
+    width: 100%;
+    justify-content: center;
+    padding: 0.6rem 0.9rem;
+  }
+
+  .leader-page .nav-links #follower-badge {
+    display: none;
+  }
+
+  .watch-page .watch-full-graph-wrapper {
+    display: none !important;
+  }
+}
+
+@media (max-width: 900px) and (min-height: 460px) {
+  html.stage-html {
+    min-height: 0;
+    height: 100%;
+    height: 100svh;
+    height: 100dvh;
+    height: var(--stage-vh, 100dvh);
+    max-height: var(--stage-vh, 100dvh);
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  body.stage-page {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    width: 100%;
+    min-height: 0;
+    height: 100%;
+    height: 100svh;
+    height: 100dvh;
+    height: var(--stage-vh, 100dvh);
+    max-height: var(--stage-vh, 100dvh);
+    overflow: hidden;
+    overscroll-behavior: none;
+  }
+
+  .stage-page .navbar {
+    padding: 0.35rem 0.65rem;
+    min-height: 44px;
+    flex-shrink: 0;
+  }
+
+  .stage-page .brand {
+    font-size: 1rem;
+    gap: 0.35rem;
+  }
+
+  .stage-page .brand img {
+    width: 22px;
+    height: 22px;
+  }
+
+  .stage-page .stage-role-badge {
+    font-size: 0.66rem !important;
+    padding: 0.16rem 0.42rem;
+  }
+
+  .stage-page .navbar-brand-group {
+    gap: 0.4rem;
+  }
+
+  .stage-page .navbar-right-group {
+    gap: 0.4rem;
+  }
+
+  .stage-page .navbar-title {
+    font-size: 0.82rem;
+    max-width: 110px;
+  }
+
+  .stage-page .navbar-burger {
+    width: 32px;
+    height: 32px;
+    padding: 6px 5px;
+  }
+
+  .stage-page .nav-status {
+    gap: 0.3rem;
+  }
+
+  .stage-page .nav-status .user-badge {
+    font-size: 0.72rem;
+    padding: 0.18rem 0.48rem;
+  }
+
+  .stage-page .split-layout {
+    flex: 1 1 0;
+    min-height: 0;
+    height: auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    gap: 0.45rem;
+  }
+
+  .leader-page .split-layout {
+    padding: 0.45rem 0.65rem 0;
+  }
+
+  .watch-page .split-layout {
+    padding: 0.45rem 0.65rem calc(0.5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* Flatten panes so all stage items participate in a single locked portrait column */
+  .stage-page #left-pane,
+  .stage-page #right-pane,
+  .stage-page .slide-card,
+  .stage-page .leader-controls-grid {
+    display: contents;
+  }
+
+  /* Hide desktop-only blocks from portrait stage */
+  .stage-page .pane-header,
+  .stage-page .leader-share-section,
+  .stage-page .leader-progress-row,
+  .stage-page .leader-controls-grid > .mode-toggle-row,
+  .stage-page .notes-section,
+  .stage-page .watch-full-graph-wrapper,
+  .stage-page .graph-legend,
+  .stage-page #toggle-spend-btn {
+    display: none !important;
+  }
+
+  /* 1. Age, Date, Mood & Emoji */
+  .stage-page .stage-meta-row {
+    order: 1;
+    flex-shrink: 0;
+    margin: 0;
+    padding: 0.4rem 0.65rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    gap: 0.3rem 0.5rem;
+  }
+
+  .stage-page .age-date-group {
+    gap: 0.45rem;
+    align-items: baseline;
+  }
+
+  .stage-page .age-date-group .metric-group {
+    gap: 0.35rem;
+    align-items: baseline;
+  }
+
+  .stage-page .age-date-group .metric-label {
+    font-size: 0.68rem;
+  }
+
+  .stage-page .metric-value-lg {
+    font-size: 1.5rem;
+    line-height: 1.05;
+  }
+
+  .stage-page .stage-date {
+    font-size: 0.8rem;
+  }
+
+  .stage-page .stage-mood-cluster {
+    gap: 0.45rem;
+  }
+
+  .stage-page .mood-badge {
+    font-size: 0.84rem;
+    padding: 0.2rem 0.58rem;
+    white-space: nowrap;
+  }
+
+  .stage-page .emoji-display {
+    font-size: 1.55rem;
+  }
+
+  .stage-page .emoji-display.emoji-text {
+    font-size: 0.8rem;
+    max-width: 112px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stage-page .spend-pill {
+    flex-basis: 100%;
+    font-size: 0.72rem;
+    padding: 0.16rem 0.5rem;
+    justify-content: center;
+  }
+
+  /* 2. Artwork */
+  .stage-page .mood-artwork-wrap {
+    order: 2;
+    flex-shrink: 0;
+    margin: 0;
+  }
+
+  .leader-page .mood-artwork-frame {
+    width: min(100%, clamp(132px, 27dvh, 240px));
+    max-width: none;
+    border-radius: 10px;
+  }
+
+  .watch-page .mood-artwork-frame {
+    width: min(100%, clamp(148px, 32dvh, 280px));
+    max-width: none;
+    border-radius: 10px;
+  }
+
+  /* 3. Notable Events — the ONE scrollable region */
+  .stage-page .events-section {
+    order: 3;
+    flex: 1 1 0;
+    min-height: 68px;
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.45rem 0.6rem;
+  }
+
+  .stage-page .events-section > .metric-label {
+    flex-shrink: 0;
+    font-size: 0.68rem;
+    margin-bottom: 0.3rem;
+  }
+
+  .stage-page .events-list {
+    flex: 1 1 0;
+    min-height: 0;
+    margin-top: 0;
+    gap: 0.35rem;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    touch-action: pan-y;
+    padding-right: 0.15rem;
+  }
+
+  .stage-page .events-list li {
+    background: var(--bg-primary);
+    padding: 0.38rem 0.6rem;
+    font-size: 0.85rem;
+    line-height: 1.3;
+    border-radius: 6px;
+    flex-shrink: 0;
+  }
+
+  /* 4. Mood Progress Graph */
+  .leader-page .leader-graph-section,
+  .watch-page .watch-progress-graph-wrapper {
+    order: 4;
+    flex-shrink: 0;
+    margin: 0;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 10px;
+    padding: 0.35rem 0.5rem;
+  }
+
+  .leader-page .leader-graph-section .canvas-wrapper {
+    margin: 0;
+    padding: 0;
+    border: none;
+    background: transparent;
+  }
+
+  .stage-page .graph-section-header {
+    margin-bottom: 0.2rem;
+    gap: 0.35rem;
+  }
+
+  .stage-page .canvas-title {
+    font-size: 0.68rem;
+  }
+
+  .stage-page .graph-progress-label {
+    display: inline-block;
+    font-size: 0.72rem;
+  }
+
+  .leader-page .leader-graph-canvas {
+    height: 64px;
+  }
+
+  .watch-page .watch-progress-canvas {
+    height: 70px;
+  }
+
+  /* 5. Fixed Bottom Back & Forward Keys (Leader only) */
+  .leader-page .controls-row {
+    order: 5;
+    flex-shrink: 0;
+    margin: 0 -0.65rem;
+    padding: 0.45rem 0.65rem calc(0.55rem + env(safe-area-inset-bottom, 0px));
+    gap: 0.6rem;
+    background: var(--bg-secondary);
+    border-top: 1px solid var(--border-color);
+  }
+
+  .leader-page .control-btn {
+    min-height: 52px;
+    font-size: 1.1rem;
+    border-radius: 10px;
+  }
+}
+
+@media (max-width: 390px) and (min-height: 460px) {
+  .stage-page .navbar-title {
+    display: none;
   }
 }
