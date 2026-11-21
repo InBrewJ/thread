@@ -32,7 +32,13 @@ Live Instance: **[thread.dryark.uk](https://thread.dryark.uk)**
 - **Mood & Impulse Correlator**: Automatically aligns calendar transaction dates with timeline life stages via birthdate, projecting financial surges directly onto the mood curve to identify manic/chaotic spending patterns.
 - **Dynamic Spend Canvas Overlay**: Ambient amber spending envelope, vertical surge guides, and live spend badges on both Leader and Follower slide decks.
 
-### 4. Authentication & Data Privacy
+### 4. Local AI Mood Artwork Generation (`mood-gen`)
+- **100% Local Diffusion Worker**: Runs as an isolated, resource-capped Docker sidecar powered by `stable-diffusion.cpp` and quantized Stable Diffusion v1.5 (`Q4_0` GGUF) weights, ensuring private mood notes and events never leave your hardware.
+- **Expressionist Prompt Synthesis**: Deterministically translates each mood point's score, emoji, events, and notes into an abstract expressionist prompt (*Van Gogh impasto brushwork, Munch emotional atmosphere, and Cézanne color facets*), adapting palettes across low ($0\text{–}3$), stable ($4\text{–}6$), and elevated ($7\text{–}10$) mood bands.
+- **Dual Presentation Modes & Live Sync**: Presenters can switch live between **Full Scene** (locally generated $400\times400$ PNGs served via authenticated/token-gated `/api/slides/<id>/image`) and **Generative Art** (zero-RAM procedural HTML5 `<canvas>` artwork in `mood-art.js`), broadcast in real time to all followers via Socket.IO with Generative Art serving as an instant fallback while images are generating.
+- **Automatic Backfill & Polite Scheduling**: Polls a shared SQLite WAL job queue (`mood_image_jobs`) to backfill existing milestones and regenerate artwork whenever slide content changes, running at low priority (`nice -n 15`) with bounded container CPU/RAM limits.
+
+### 5. Authentication & Data Privacy
 - **RAuthy OIDC & Passkeys**: Secure SSO supporting Passkeys (WebAuthn) and OAuth2/OIDC.
 - **Strict Data Isolation**: Multi-tenant architecture where each user's timelines and mood points are strictly partitioned by `user_id` in SQLite.
 - **Privacy-First Design**: Databases and private user records are excluded from source control (`.gitignore`). New instances start with clean demo placeholder data.
